@@ -64,14 +64,20 @@ function calculateStatistics(data) {
 
 // Main logic to process each provider ID
 async function processProviders() {
+    const startTime = Date.now() // Record start time
+
     try {
+        console.log("Starting a new data collection round...")
+
         const nodeIds = await fetchNodeIds()
 
         // Splitting nodeIds into smaller chunks for concurrent processing
-        const chunkSize = 100 // adjust this number based on your concurrency needs
+        const chunkSize = 5 // adjust this number based on your concurrency needs
         let allData = []
 
         for (let i = 0; i < nodeIds.length; i += chunkSize) {
+            console.log(`Processing chunk ${Math.floor(i / chunkSize) + 1} of ${Math.ceil(nodeIds.length / chunkSize)}`)
+
             const chunk = nodeIds.slice(i, i + chunkSize)
 
             const results = await Promise.allSettled(chunk.map((id) => pingProvider(id)))
@@ -89,6 +95,15 @@ async function processProviders() {
         calculateStatistics(allData)
     } catch (error) {
         console.error("Error fetching node IDs:", error)
+    } finally {
+        const endTime = Date.now() // Record end time
+        console.log("Data collection round completed.")
+
+        const elapsedTime = endTime - startTime
+        const nextRunDelay = Math.max(60000 - elapsedTime, 0) // Calculate delay for next run
+
+        console.log(`Scheduling next run in ${nextRunDelay} milliseconds.`)
+        setTimeout(processProviders, nextRunDelay) // Schedule next run
     }
 }
 
