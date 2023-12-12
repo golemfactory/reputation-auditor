@@ -26,17 +26,20 @@ function pingProvider(providerId) {
     })
 }
 
-// Function to write to CSV
+// Function to write to CSV with a timestamp in the file name
 function writeToCsv(data) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-") // Create a timestamp and replace invalid filename characters
+    const fileName = `output-${timestamp}.csv` // Add timestamp to file name
+
     let csvContent = "alias,nodeId,p2p,ping (tcp),ping (udp)\n" // Add header line
 
     data.forEach((item) => {
         csvContent += `${item.alias},${item.nodeId},${item.p2p},${item["ping (tcp)"]},${item["ping (udp)"]}\n`
     })
 
-    fs.writeFile("output.csv", csvContent, (err) => {
+    fs.writeFile(fileName, csvContent, (err) => {
         if (err) throw err
-        console.log("CSV file saved!")
+        console.log(`CSV file ${fileName} saved!`)
     })
 }
 
