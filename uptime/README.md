@@ -62,7 +62,7 @@ This script is provided "as is", without warranty of any kind. Feel free to use,
 To ensure that a new instance of your script is only scheduled after the previous one has finished using systemd, you need to create a systemd service and a systemd timer. Here's how you can set it up:
 
 1. Create a systemd Service
-   A systemd service file will define how your script should be run. Create a new service file under /etc/systemd/system/ with a .service extension, for example, mynodescript.service.
+   A systemd service file will define how your script should be run. Create a new service file under /etc/systemd/system/ with a .service extension, for example, uptimescanner.service.
 
 Here's an example of what the file might look like:
 
@@ -76,11 +76,12 @@ User=ubuntu
 ExecStart=/usr/bin/python3 /home/ubuntu/reputation-auditor/uptime/scanner.py
 Environment=YAGNA_APPKEY=stats
 WorkingDirectory=/home/ubuntu/reputation-auditor/uptime
+Environment=PATH=/home/ubuntu/.local/bin:/home/ubuntu/.local/bin:/home/ubuntu/.nvm/versions/node/v21.4.0/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bins
 ```
 
 Type=oneshot: This indicates that the service is a one-time task and will exit after running. Systemd will consider the service as 'finished' once the script exits.
 ExecStart: The command to start your script. Change the paths according to your script's location and the Python interpreter. 2. Create a systemd Timer
-A systemd timer will schedule when your service should be run. Create a new timer file under /etc/systemd/system/ with a .timer extension, for example, mynodescript.timer.
+A systemd timer will schedule when your service should be run. Create a new timer file under /etc/systemd/system/ with a .timer extension, for example, uptimescanner.timer.
 
 Here's an example of what the file might look like:
 
@@ -124,9 +125,9 @@ This way, you can ensure that the script is only scheduled after the previous ru
 
 To check the status of your timer and service, use:
 
-systemctl status mynodescript.timer - for the timer
-systemctl status mynodescript.service - for the service
+systemctl status uptimescanner.timer - for the timer
+systemctl status uptimescanner.service - for the service
 And to view logs produced by your script:
 
-journalctl -u mynodescript.service
+journalctl -u uptimescanner.service
 This setup provides a robust and flexible way to schedule tasks like your script while ensuring they don't overlap, using the power and reliability of systemd.
