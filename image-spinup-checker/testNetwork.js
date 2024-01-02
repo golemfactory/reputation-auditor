@@ -12,7 +12,7 @@ function chunkArray(array, size) {
     return chunks
 }
 
-const apiUrl = "https://api.stats.golem.network/v1/network/online"
+const apiUrl = "https://api.stats.golem.network/v2/network/online"
 const csvWriter = createObjectCsvWriter({
     path: "test-results.csv",
     header: [

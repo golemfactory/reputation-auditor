@@ -3,7 +3,7 @@ const fs = require("fs")
 
 // Function to fetch node IDs from the API
 async function fetchNodeIds() {
-    const url = "https://api.stats.golem.network/v1/network/online"
+    const url = "https://api.stats.golem.network/v2/network/online"
     const response = await fetch(url)
     const data = await response.json()
     return data.map((item) => item.node_id)
