@@ -72,7 +72,10 @@ Description=Node Monitoring Script
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 /path/to/your/script.py
+User=ubuntu
+ExecStart=/usr/bin/python3 /home/ubuntu/reputation-auditor/uptime/scanner.py
+Environment=YAGNA_APPKEY=stats
+WorkingDirectory=/home/ubuntu/reputation-auditor/uptime
 ```
 
 Type=oneshot: This indicates that the service is a one-time task and will exit after running. Systemd will consider the service as 'finished' once the script exits.
@@ -88,7 +91,7 @@ Description=Runs node script every 30 seconds
 [Timer]
 OnBootSec=10sec
 OnUnitActiveSec=30sec
-Unit=mynodescript.service
+Unit=uptimescanner.service
 
 [Install]
 WantedBy=timers.target
@@ -107,8 +110,8 @@ sudo systemctl daemon-reload
 Now, enable and start your timer:
 
 ```bash
-sudo systemctl enable mynodescript.timer  # Enables the timer to start on boot
-sudo systemctl start mynodescript.timer   # Starts the timer immediately
+sudo systemctl enable uptimescanner.timer  # Enables the timer to start on boot
+sudo systemctl start uptimescanner.timer   # Starts the timer immediately
 ```
 
 ## Ensuring Non-Overlap
