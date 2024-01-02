@@ -98,12 +98,6 @@ async function processProviders() {
     } finally {
         const endTime = Date.now() // Record end time
         console.log("Data collection round completed.")
-
-        const elapsedTime = endTime - startTime
-        const nextRunDelay = Math.max(60000 - elapsedTime, 0) // Calculate delay for next run
-
-        console.log(`Scheduling next run in ${nextRunDelay} milliseconds.`)
-        setTimeout(processProviders, nextRunDelay) // Schedule next run
     }
 }
 
