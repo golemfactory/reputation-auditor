@@ -59,23 +59,22 @@ async def list_offers(conf: Configuration, subnet_tag: str, nodes_data, scanned_
         dbuild.add(yp.Activity(expiration=datetime.now(timezone.utc)))
 
         async with market_api.subscribe(dbuild.properties, dbuild.constraints) as subscription:
-            while True:
-                async for event in subscription.events():
-                    if event.issuer not in current_scan_providers:
-                        current_scan_providers.add(event.issuer)
+            async for event in subscription.events():
+                if event.issuer not in current_scan_providers:
+                    current_scan_providers.add(event.issuer)
 
-                        if event.issuer not in nodes_data:
-                            nodes_data[event.issuer] = {
-                                "last_seen": datetime.now(),
-                                "is_online": True,
-                                "total_online_scans": 1
-                            }
-                        else:
-                            nodes_data[event.issuer]["is_online"] = True
-                            nodes_data[event.issuer]["last_seen"] = datetime.now()
-                            nodes_data[event.issuer]["total_online_scans"] += 1
+                    if event.issuer not in nodes_data:
+                        nodes_data[event.issuer] = {
+                            "last_seen": datetime.now(),
+                            "is_online": True,
+                            "total_online_scans": 1
+                        }
+                    else:
+                        nodes_data[event.issuer]["is_online"] = True
+                        nodes_data[event.issuer]["last_seen"] = datetime.now()
+                        nodes_data[event.issuer]["total_online_scans"] += 1
 
-                        update_csv(event.issuer, True, nodes_data, scanned_times)
+                    update_csv(event.issuer, True, nodes_data, scanned_times)
 
 async def monitor_nodes_status(subnet_tag: str = "public"):
     nodes_data = {}
@@ -91,41 +90,39 @@ async def monitor_nodes_status(subnet_tag: str = "public"):
                     "total_online_scans": int(row["total_online_scans"])
                 }
 
-    while True:
-        scanned_times += 1
-        save_scan_count(scanned_times)
-        current_scan_providers = set()  # Initialize an empty set for the current scan
+    scanned_times += 1
+    save_scan_count(scanned_times)
+    current_scan_providers = set()  # Initialize an empty set for the current scan
 
-        try:
-            await asyncio.wait_for(
-                list_offers(
-                    Configuration(api_config=ApiConfig()),
-                    subnet_tag=subnet_tag,
-                    nodes_data=nodes_data,
-                    scanned_times=scanned_times,
-                    current_scan_providers=current_scan_providers
-                ),
-                timeout=30  # 30-second timeout for each scan
-            )
-        except asyncio.TimeoutError:
-            print("Scan timeout reached")
+    try:
+        await asyncio.wait_for(
+            list_offers(
+                Configuration(api_config=ApiConfig()),
+                subnet_tag=subnet_tag,
+                nodes_data=nodes_data,
+                scanned_times=scanned_times,
+                current_scan_providers=current_scan_providers
+            ),
+            timeout=30  # 30-second timeout for each scan
+        )
+    except asyncio.TimeoutError:
+        print("Scan timeout reached")
 
-        for node_id, data in nodes_data.items():
+    for node_id, data in nodes_data.items():
+        
+        if datetime.now() - data["last_seen"] > timedelta(seconds=30):
+            print(f"We haven't seen node {node_id} for more than 30 seconds, checking its status...")
+            is_online = check_node_status(node_id)
             
-            if datetime.now() - data["last_seen"] > timedelta(seconds=30):
-                print(f"We haven't seen node {node_id} for more than 30 seconds, checking its status...")
-                is_online = check_node_status(node_id)
-                
 
-                data["is_online"] = is_online
-                if not is_online:
-                    print(f"Node {node_id} is offline")
-                    data["total_online_scans"] -= 1  # Subtract one scan if the node is found offline
-                else:
-                    print(f"Node {node_id} is online")
-                update_csv(node_id, is_online, nodes_data, scanned_times)
+            data["is_online"] = is_online
+            if not is_online:
+                print(f"Node {node_id} is offline")
+                data["total_online_scans"] -= 1  # Subtract one scan if the node is found offline
+            else:
+                print(f"Node {node_id} is online")
+            update_csv(node_id, is_online, nodes_data, scanned_times)
 
-        await asyncio.sleep(30)
 
 def main():
     parser = utils.build_parser("List offers")
