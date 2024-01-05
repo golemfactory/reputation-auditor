@@ -1,0 +1,8 @@
+*DS_STORE
+.envs
+*.pyc
+celerybeat-schedule
+*.log
+reputation-backend/static/admin/*
+reputation-backend/static/rest_framework/*
+celerybeat-schedule.db

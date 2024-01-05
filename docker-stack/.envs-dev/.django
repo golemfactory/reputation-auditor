@@ -1,0 +1,8 @@
+DB_HOST=postgres
+DB_PORT=5432
+DB_PASSWORD=dbpassword
+DB_USER=dbuser
+DATABASE=dbname
+DJANGO_SECRET=something
+ALLOWED_HOSTS=["api.localhost"]
+YAGNA_APPKEY=reputation

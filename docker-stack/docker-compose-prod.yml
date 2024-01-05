@@ -1,0 +1,186 @@
+version: "3.8"
+volumes:
+    db_data: {}
+    pgadmin:
+services:
+    pgadmin:
+        image: dpage/pgadmin4
+        links:
+            - postgres
+        depends_on:
+            - postgres
+        env_file:
+            - ./.envs/.pgadmin
+        volumes:
+            - pgadmin:/var/lib/pgadmin
+        deploy:
+            labels:
+                - traefik.enable=true
+                - "traefik.http.routers.pgadmin.rule=Host(`${LOCALHOST_IP}`)"
+                - traefik.http.routers.pgadmin.entrypoints=webinternal
+                - traefik.http.services.pgadmin.loadbalancer.server.port=80
+                - traefik.http.routers.pgadmin.service=pgadmin@docker
+                - traefik.docker.network=reputation
+            replicas: 1
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: on-failure
+        networks:
+            - reputation
+    traefik:
+        image: traefik:latest
+        ports:
+            - "80:80"
+            - "443:443"
+            - "85:85"
+        command:
+            - "--providers.docker=true"
+            - "--providers.docker.swarmmode=true"
+            - "--providers.docker.exposedbydefault=false"
+            - "--entrypoints.web.address=:80"
+            - "--entrypoints.webinternal.address=:85"
+            - "--entrypoints.web-secure.address=:443"
+            - "--entrypoints.web.http.redirections.entryPoint.to=web-secure"
+            - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+            - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
+            - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge=true"
+            - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge.entrypoint=web"
+            - "--certificatesresolvers.letsencryptresolver.acme.email=${EMAIL}"
+            - "--certificatesresolvers.letsencryptresolver.acme.storage=/letsencrypt/acme.json"
+            - "--metrics.prometheus=true"
+            - "--metrics.prometheus.buckets=0.1,0.3,1.2,5.0"
+            - --metrics.prometheus.entryPoint=metrics
+            - --entryPoints.metrics.address=:8080
+        labels:
+            - "traefik.enable=true"
+            - "traefik.docker.network=reputation"
+            - "traefik.http.routers.traefik.middlewares=traefik-compress"
+
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock:ro
+            - ./letsencrypt:/letsencrypt
+        deploy:
+            replicas: 3
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: on-failure
+            
+        networks:
+            - reputation
+    django:
+        image: ghcr.io/golemfactory/golem-reputation-backend:latest
+        env_file:
+            - ./.envs/.django
+        deploy:
+            labels:
+                - traefik.enable=true
+                - "traefik.http.routers.django.rule=Host(`${DJANGO_HOST}`)"
+                - traefik.http.routers.django.entrypoints=web
+                - traefik.http.services.django.loadbalancer.server.port=8002
+                - traefik.http.routers.django.service=django@docker
+                - traefik.docker.network=reputation
+                - traefik.http.routers.django.tls.certresolver=letsencryptresolver
+                - "traefik.http.routers.django-web-secure.rule=Host(`${DJANGO_HOST}`)"
+                - traefik.http.routers.django-web-secure.tls=true
+                - traefik.http.routers.django-web-secure.entrypoints=web-secure
+                - traefik.http.middlewares.django_compress.compress=true
+                - traefik.http.routers.django-web-secure.middlewares=django_compress
+                - traefik.http.routers.django.middlewares=django_compress
+            replicas: 10
+            update_config:
+                parallelism: 2
+                failure_action: rollback
+                delay: 2s
+            restart_policy:
+                condition: on-failure
+        networks:
+            - reputation
+    redis:
+        image: "redis:alpine"
+        command: [sh, -c, "rm -f /data/dump.rdb && redis-server --maxclients 40000 --timeout 60  --save ''"]
+        expose:
+            - "6379"
+        deploy:
+            replicas: 1
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: on-failure
+        networks:
+            - reputation
+    celery:
+        image: ghcr.io/golemfactory/golem-reputation-backend-celery:latest
+        env_file:
+            - ./.envs/.django
+        deploy:
+            replicas: 5
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 2s
+            restart_policy:
+                condition: on-failure
+        networks:
+            - reputation
+    yagna_node:
+        image: ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:latest
+        env_file:
+            - ./.envs/.django
+        healthcheck:
+            test: /check_yagna.sh || exit 1
+            interval: 15s
+            timeout: 5s
+            retries: 3
+            start_period: 15s
+        deploy:
+            replicas: 3
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: any
+        networks:
+            - reputation
+    celery_beat:
+        image: ghcr.io/golemfactory/golem-reputation-backend-celery-beat:latest
+        command: celery -A core beat -l INFO
+        env_file:
+            - ./.envs/.django
+        deploy:
+            replicas: 1
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: on-failure
+        networks:
+            - reputation
+    postgres:
+        image: postgres:13.4-alpine
+        env_file:
+            - ./.envs/.db
+        volumes:
+            - "db_data:/var/lib/postgresql/data"
+        networks:
+            - reputation
+        deploy:
+            replicas: 1
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: on-failure
+networks:
+    reputation:
+        driver: overlay

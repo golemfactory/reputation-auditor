@@ -1,0 +1,219 @@
+version: "3.8"
+volumes:
+    db_data: {}
+    pgadmin:
+services:
+    pgadmin:
+        image: dpage/pgadmin4
+        links:
+            - postgres
+        depends_on:
+            - postgres
+        env_file:
+            - ./.envs-dev/.pgadmin
+        volumes:
+            - pgadmin:/var/lib/pgadmin
+        deploy:
+            labels:
+                - traefik.enable=true
+                - traefik.http.routers.pgadmin.rule=Host(`pgadmin.localhost`)
+                - traefik.http.routers.pgadmin.entrypoints=web
+                - traefik.http.services.pgadmin.loadbalancer.server.port=80
+                - traefik.http.routers.pgadmin.service=pgadmin@docker
+                - traefik.docker.network=reputation
+            replicas: 1
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: on-failure
+        networks:
+            - reputation
+    traefik:
+        image: traefik:latest
+        ports:
+            - "80:80"
+            - "443:443"
+            - "8080:8080"
+        command:
+            - "--providers.docker=true"
+            - "--providers.docker.swarmmode=true"
+            - "--providers.docker.exposedbydefault=false"
+            - "--entrypoints.web.address=:80"
+            - "--metrics.prometheus=true"
+            - "--metrics.prometheus.buckets=0.1,0.3,1.2,5.0"
+            - --metrics.prometheus.entryPoint=metrics
+            - --entryPoints.metrics.address=:8080
+        labels:
+            - "traefik.enable=true"
+            - "traefik.docker.network=reputation"
+            - "traefik.http.routers.traefik.middlewares=traefik-compress"
+
+        volumes:
+            - /var/run/docker.sock:/var/run/docker.sock:ro
+        deploy:
+            replicas: 1
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: on-failure
+            placement:
+                constraints:
+                    - node.role == manager
+        networks:
+            - reputation
+    django:
+        build:
+            context: golem-reputation-backend/.
+            dockerfile: dockerfiles/Django
+        image: backend:latest
+        volumes:
+            - "./golem-reputation-backend/reputation-backend:/reputation-backend/"
+        env_file:
+            - ./.envs-dev/.django
+        deploy:
+            labels:
+                - traefik.enable=true
+                - traefik.http.routers.django.rule=Host(`api.localhost`)
+                - traefik.http.routers.django.entrypoints=web
+                - traefik.http.services.django.loadbalancer.server.port=8002
+                - traefik.http.routers.django.service=django@docker
+                - traefik.docker.network=reputation
+            replicas: 1
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: on-failure
+        networks:
+            - reputation
+    redis:
+        image: "redis:alpine"
+        command: [sh, -c, "rm -f /data/dump.rdb && redis-server --maxclients 40000 --timeout 60  --save ''"]
+        expose:
+            - "6379"
+        deploy:
+            replicas: 1
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: on-failure
+        networks:
+            - reputation
+    celery:
+        build:
+            context: golem-reputation-backend/.
+            dockerfile: dockerfiles/Celery
+        image: reputation-celery:latest
+        volumes:
+            - "./golem-reputation-backend/reputation-backend:/reputation-backend/"
+        env_file:
+            - ./.envs-dev/.django
+        deploy:
+            replicas: 1
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: on-failure
+        networks:
+            - reputation
+    uptime_worker:
+        command: ["/bin/sh", "-c", "/wait-for-it.sh postgres:5432 -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q uptime -c 1"]
+        build:
+            context: golem-reputation-backend/.
+            dockerfile: dockerfiles/Yagna
+        image: reputation-celery-yagna:latest
+        volumes:
+            - "./golem-reputation-backend/reputation-backend:/reputation-backend/"
+        env_file:
+            - ./.envs-dev/.django
+        healthcheck:
+            test: /check_yagna.sh || exit 1
+            interval: 15s
+            timeout: 5s
+            retries: 3
+            start_period: 15s
+        deploy:
+            replicas: 1
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: on-failure
+        networks:
+            - reputation
+    ping_worker:
+        command: ["/bin/sh", "-c", "/wait-for-it.sh postgres:5432 -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q pinger -c 1"]
+        build:
+            context: golem-reputation-backend/.
+            dockerfile: dockerfiles/Yagna
+        image: reputation-celery-yagna:latest
+        volumes:
+            - "./golem-reputation-backend/reputation-backend:/reputation-backend/"
+        env_file:
+            - ./.envs-dev/.django
+        healthcheck:
+            test: /check_yagna.sh || exit 1
+            interval: 15s
+            timeout: 5s
+            retries: 3
+            start_period: 15s
+        deploy:
+            replicas: 1
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: on-failure
+        networks:
+            - reputation
+    celery_beat:
+        build:
+            context: golem-reputation-backend/.
+            dockerfile: dockerfiles/Beat
+        image: celery-beat:latest
+        command: celery -A core beat -l INFO
+        volumes:
+            - "./golem-reputation-backend/reputation-backend:/reputation-backend/"
+        env_file:
+            - ./.envs-dev/.django
+        deploy:
+            replicas: 1
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: on-failure
+        networks:
+            - reputation
+    postgres:
+        image: postgres:13.4-alpine
+        env_file:
+            - ./.envs-dev/.db
+        volumes:
+            - "db_data:/var/lib/postgresql/data"
+        networks:
+            - reputation
+        deploy:
+            replicas: 1
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: on-failure
+
+networks:
+    reputation:
+        driver: overlay

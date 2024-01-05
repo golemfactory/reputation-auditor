@@ -1,0 +1,35 @@
+FROM python:3.10-alpine
+ENV PYTHONUNBUFFERED 1
+# Creating working directory
+RUN mkdir /reputation-backend
+RUN mkdir /reputation-backend/static
+
+# Creating Work Directory
+WORKDIR /reputation-backend
+
+COPY ./requirements.pip /scripts/
+
+
+COPY ./wait-for-it.sh /wait-for-it.sh
+
+
+
+RUN apk add --no-cache --virtual .build-deps \
+    ca-certificates gcc postgresql-dev linux-headers musl-dev \
+    libffi-dev jpeg-dev zlib-dev \
+    && pip install -r /scripts/requirements.pip \
+    && find /usr/local \
+    \( -type d -a -name test -o -name tests \) \
+    -o \( -type f -a -name '*.pyc' -o -name '*.pyo' \) \
+    -exec rm -rf '{}' + \
+    && runDeps="$( \
+    scanelf --needed --nobanner --recursive /usr/local \
+    | awk '{ gsub(/,/, "\nso:", $2); print "so:" $2 }' \
+    | sort -u \
+    | xargs -r apk info --installed \
+    | sort -u \
+    )" \
+    && apk add --virtual .rundeps $runDeps \
+    && apk del .build-deps
+COPY ./reputation-backend/ /reputation-backend/
+CMD ["sh", "-c",  "/wait-for-it.sh postgres:5432 -- python manage.py makemigrations; python manage.py migrate; python manage.py collectstatic --no-input; daphne -u /tmp/daphne.sock -b 0.0.0.0 -p 8002 core.asgi:application"]
