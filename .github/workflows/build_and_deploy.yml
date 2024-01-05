@@ -14,18 +14,23 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Git clone on our repo
+            
               uses: actions/checkout@v2
               
             - name: Switch directory
+              working-directory: ./docker-stack/golem-reputation-backend
               run: cd docker-stack/golem-reputation-backend
 
             - name: Login to Dockerhub
+              working-directory: ./docker-stack/golem-reputation-backend
               run: make login
 
             - name: Build Containers
+              working-directory: ./docker-stack/golem-reputation-backend
               run: make build-amd64
 
             - name: Push Containers
+              working-directory: ./docker-stack/golem-reputation-backend
               run: make push-amd64
 
             - name: Deploy to europe reputation instance
