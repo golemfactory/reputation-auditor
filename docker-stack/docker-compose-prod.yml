@@ -63,7 +63,7 @@ services:
             - /var/run/docker.sock:/var/run/docker.sock:ro
             - ./letsencrypt:/letsencrypt
         deploy:
-            replicas: 3
+            replicas: 1
             update_config:
                 parallelism: 1
                 failure_action: rollback
@@ -92,7 +92,7 @@ services:
                 - traefik.http.middlewares.django_compress.compress=true
                 - traefik.http.routers.django-web-secure.middlewares=django_compress
                 - traefik.http.routers.django.middlewares=django_compress
-            replicas: 10
+            replicas: 1
             update_config:
                 parallelism: 2
                 failure_action: rollback
@@ -121,7 +121,7 @@ services:
         env_file:
             - ./.envs/.django
         deploy:
-            replicas: 5
+            replicas: 1
             update_config:
                 parallelism: 1
                 failure_action: rollback
@@ -141,7 +141,7 @@ services:
             retries: 3
             start_period: 15s
         deploy:
-            replicas: 3
+            replicas: 1
             update_config:
                 parallelism: 1
                 failure_action: rollback
