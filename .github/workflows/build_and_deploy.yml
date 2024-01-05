@@ -1,0 +1,40 @@
+name: Build and push containers to ghcr
+env:
+    DOCKER_USER: ${{ secrets.DOCKER_USER }}
+    DOCKER_PASS: ${{ secrets.DOCKER_PASS }}
+
+on:
+    push:
+        branches:
+            - master
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Git clone on our repo
+              uses: actions/checkout@v2
+              
+            - name: Switch directory
+              run: cd docker-stack/golem-reputation-backend
+
+            - name: Login to Dockerhub
+              run: make login
+
+            - name: Build Containers
+              run: make build-amd64
+
+            - name: Push Containers
+              run: make push-amd64
+
+            - name: Deploy to europe reputation instance
+              uses: appleboy/ssh-action@master
+              with:
+                  host: ${{ secrets.EU_HOST }}
+                  username: ${{ secrets.USERNAME }}
+                  key: ${{ secrets.EU_KEY }}
+                  port: ${{ secrets.PORT }}
+                  script: |
+                      docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend:${{ github.sha }} reputation_django
+                      docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery:${{ github.sha }} reputation_celery
+                      docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-beat:${{ github.sha }} reputation_celery_beat
+                      docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_yagna_node
