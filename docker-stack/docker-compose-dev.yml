@@ -93,7 +93,7 @@ services:
             - reputation
     redis:
         image: "redis:alpine"
-        command: [sh, -c, "rm -f /data/dump.rdb && redis-server --maxclients 40000 --timeout 60  --save ''"]
+        command: [sh, -c, "rm -f /data/dump.rdb && redis-server --maxclients 40000 --timeout 0  --save ''"]
         expose:
             - "6379"
         deploy:
@@ -198,7 +198,7 @@ services:
         networks:
             - reputation
     postgres:
-        image: postgres:13.4-alpine
+        image: postgres:15.2-alpine
         env_file:
             - ./.envs-dev/.db
         volumes:

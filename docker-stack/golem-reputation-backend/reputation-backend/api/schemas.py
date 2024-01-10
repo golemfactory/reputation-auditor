@@ -1,8 +1,14 @@
 from ninja import Schema
+from typing import Optional
+
 
 class ProviderSuccessRate(Schema):
     node_id: str
+    name: Optional[str]
+    runtime_version: Optional[str]  
+    wallet_address: Optional[dict]   
     success_rate: float
+
 
 class DiskBenchmarkSchema(Schema):
     node_id: str

@@ -103,7 +103,7 @@ services:
             - reputation
     redis:
         image: "redis:alpine"
-        command: [sh, -c, "rm -f /data/dump.rdb && redis-server --maxclients 40000 --timeout 60  --save ''"]
+        command: [sh, -c, "rm -f /data/dump.rdb && redis-server --maxclients 40000 --timeout 0  --save ''"]
         expose:
             - "6379"
         deploy:

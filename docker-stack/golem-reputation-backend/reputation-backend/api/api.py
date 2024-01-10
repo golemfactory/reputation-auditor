@@ -6,8 +6,7 @@ from django.http import JsonResponse
 from typing import Any, Dict, List
 import json
 from collections import defaultdict
-from django.db.models import Avg
-
+from django.db.models import Avg, Count, Q
 
 api = NinjaAPI()
 
@@ -110,26 +109,36 @@ def create_task_completion(request, data: TaskCompletionSchema):
     
 
 
-from django.db.models import Count, Q
+
+
 @api.get("scores/task", response=List[ProviderSuccessRate])
 def provider_success_rate(request):
     # Get all providers
     providers = Provider.objects.annotate(
-        # Count total tasks and successful tasks
         total_tasks=Count('taskcompletion'),
         successful_tasks=Count('taskcompletion', filter=Q(taskcompletion__is_successful=True))
     )
 
     # Calculate success rate and prepare response
-    success_rates = [
-        {
-            "node_id": provider.node_id,
-            "success_rate": (provider.successful_tasks / provider.total_tasks * 100) if provider.total_tasks > 0 else 0
-        }
-        for provider in providers
-    ]
+    success_rates = sorted(
+        [
+            {
+                "node_id": provider.node_id,  # Unique Node ID
+                "name": provider.name,  # Name of the provider
+                "runtime_version": provider.runtime_version,  # Runtime Version
+                "wallet_address": provider.payment_addresses,  # Wallet Address in JSON
+                "success_rate": (provider.successful_tasks / provider.total_tasks * 100) if provider.total_tasks > 0 else 0  # Calculating success rate
+            }
+            for provider in providers
+        ],
+        key=lambda x: x["success_rate"],  # Sorting by success rate
+        reverse=True  # Descending order
+    )
+
     return success_rates
 
+    
+    
 
 
 
