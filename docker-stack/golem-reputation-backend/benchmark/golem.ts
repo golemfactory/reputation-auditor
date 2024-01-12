@@ -364,8 +364,6 @@ export class Golem {
                 return false
             }
 
-            console.log("Accepting proposal")
-
             return true
         }
     }
