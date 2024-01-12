@@ -4,5 +4,6 @@ DB_PASSWORD=dbpassword
 DB_USER=dbuser
 DATABASE=dbname
 DJANGO_SECRET=something
-ALLOWED_HOSTS=["api.localhost"]
+ALLOWED_HOSTS=["api.localhost", "django"]
 YAGNA_APPKEY=reputation
+DOCKER=true

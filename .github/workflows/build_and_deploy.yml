@@ -14,7 +14,7 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Git clone on our repo
-            
+
               uses: actions/checkout@v2
 
             - name: Login to Dockerhub
@@ -42,7 +42,7 @@ jobs:
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-beat:${{ github.sha }} reputation_celery_beat
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_uptime_worker
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_ping_worker
-
+                      docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_benchmarker_worker
 
             - name: Deploy to Asia reputation instance
               uses: appleboy/ssh-action@master
@@ -57,6 +57,7 @@ jobs:
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-beat:${{ github.sha }} reputation_celery_beat
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_uptime_worker
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_ping_worker
+                      docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_benchmarker_worker
 
             - name: Deploy to US reputation instance
               uses: appleboy/ssh-action@master
@@ -71,3 +72,4 @@ jobs:
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-beat:${{ github.sha }} reputation_celery_beat
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_uptime_worker
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_ping_worker
+                      docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_benchmarker_worker

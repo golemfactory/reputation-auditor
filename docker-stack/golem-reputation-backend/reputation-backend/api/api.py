@@ -1,6 +1,6 @@
 from ninja import NinjaAPI, Path
-from .models import DiskBenchmark, CpuBenchmark, MemoryBenchmark, Provider, TaskCompletion, PingResult, NodeStatus
-from .schemas import DiskBenchmarkSchema, CpuBenchmarkSchema, MemoryBenchmarkSchema, TaskCompletionSchema, ProviderSuccessRate
+from .models import DiskBenchmark, CpuBenchmark, MemoryBenchmark, Provider, TaskCompletion, PingResult, NodeStatus, Task, Offer
+from .schemas import DiskBenchmarkSchema, CpuBenchmarkSchema, MemoryBenchmarkSchema, TaskCompletionSchema, ProviderSuccessRate, TaskCreateSchema, TaskUpdateSchema, ProposalSchema
 from django.shortcuts import get_object_or_404
 from django.http import JsonResponse
 from typing import Any, Dict, List
@@ -9,7 +9,7 @@ from collections import defaultdict
 from django.db.models import Avg, Count, Q
 
 api = NinjaAPI()
-
+import redis
 
 
 
@@ -100,7 +100,8 @@ def create_task_completion(request, data: TaskCompletionSchema):
             provider_id=provider.node_id,
             task_name=data.task_name,
             is_successful=data.is_successful,
-            error_message=data.error_message
+            error_message=data.error_message,
+            
         )
         return {"status": "success", "message": "Task completion data saved successfully",}
     except Exception as e:
@@ -220,3 +221,79 @@ def get_provider_scores(request, node_id: str):
     except Exception as e:
         print(e)
         return {"status": "error", "message": "Error retrieving provider scores",}
+    
+
+from django.utils import timezone
+from django.utils import timezone
+from datetime import timedelta
+from django.db.models import Subquery, OuterRef
+
+@api.get("/blacklisted-providers", response=List[str])
+def blacklisted_providers(request):
+    now = timezone.now()
+
+    # Subquery to get the most recent tasks for each provider
+    recent_tasks = TaskCompletion.objects.filter(
+        provider=OuterRef('node_id')
+    ).order_by('-timestamp')
+
+    # Annotate each provider with its most recent tasks
+    providers_with_tasks = Provider.objects.annotate(
+        recent_task=Subquery(recent_tasks.values('is_successful')[:1])
+    )
+
+    # Filter providers whose most recent task was a failure
+    failed_providers = providers_with_tasks.filter(recent_task=False)
+
+    blacklisted_providers = []
+    for provider in failed_providers:
+        consecutive_failures = TaskCompletion.objects.filter(
+            provider=provider.node_id,
+            is_successful=False,
+            timestamp__gte=now - timedelta(days=3)  # Assuming we look at the last 3 days
+        ).count()
+
+        backoff_hours = 10 * (2 ** (consecutive_failures - 1))  # Exponential backoff formula starting from 10 hours
+        next_eligible_date = provider.taskcompletion_set.latest('timestamp').timestamp + timedelta(hours=backoff_hours)
+
+        if now < next_eligible_date:
+            blacklisted_providers.append(provider.node_id)
+
+    return blacklisted_providers
+
+
+@api.post("/task/start")
+def start_task(request, payload: TaskCreateSchema):
+    task = Task.objects.create(name=payload.name, started_at=timezone.now())
+    return {"id": task.id, "name": task.name, "started_at": task.started_at}
+
+@api.put("/task/end/{task_id}")
+def end_task(request, task_id: int):
+    try:
+        task = Task.objects.get(id=task_id)
+    except Task.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Task does not exist"}, status=404)
+    task.finished_at = timezone.now()
+    task.save()
+    return {"id": task.id, "finished_at": task.finished_at}
+
+
+redis_client = redis.Redis(host='redis', port=6379, db=0)  # Update with your Redis configuration
+
+@api.post("/task/offer/{task_id}")
+def store_offer(request, task_id: int):
+    try:
+        json_data = json.loads(request.body)
+        node_id = json_data.get('node_id')
+        offer = json_data.get('offer')
+
+        if not node_id or offer is None:
+            return JsonResponse({"status": "error", "error": "Missing node_id or offer"}, status=400)
+
+        # Create a unique key for Redis, e.g., using task ID and node ID
+        redis_key = f"offer:{task_id}:{node_id}"
+        redis_client.set(redis_key, json.dumps(offer))
+    except Exception as e:
+        return JsonResponse({"status": "error", "error": str(e)}, status=500)
+
+    return JsonResponse({"status": "success", "error": "Offer stored in Redis"})

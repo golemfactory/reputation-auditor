@@ -10,11 +10,11 @@ function run_and_parse_fileio() {
     local benchmark_name="FileIO_${test_mode}"
 
     # Prepare the test environment
-    sysbench fileio --file-total-size=10G --file-test-mode=$test_mode --file-extra-flags=direct --file-fsync-freq=0 --file-num=5 prepare
+    sysbench fileio --file-total-size=2G --file-test-mode=$test_mode --file-extra-flags=direct --file-fsync-freq=0 --file-num=5 prepare
 
     # Run the sysbench command
     echo "Running fileio test in $test_mode mode..."
-    local output=$(sysbench fileio --file-total-size=10G --file-test-mode=$test_mode --file-extra-flags=direct --file-fsync-freq=0 --file-num=5 run)
+    local output=$(sysbench fileio --file-total-size=2G --file-test-mode=$test_mode --file-extra-flags=direct --file-fsync-freq=0 --file-num=5 run)
 
     # Parse and extract the necessary details
     local reads_per_sec=$(echo "$output" | grep -oP "reads/s:\s+\K[0-9]+(\.[0-9]+)?")
@@ -61,7 +61,7 @@ function run_and_parse_fileio() {
     }' >$output_file
 
     # Cleanup after test
-    sysbench fileio --file-total-size=10G --file-test-mode=$test_mode cleanup
+    sysbench fileio --file-total-size=2G --file-test-mode=$test_mode cleanup
 
     echo "$test_mode results saved to $output_file"
 }

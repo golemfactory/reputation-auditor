@@ -18,7 +18,10 @@ class Provider(models.Model):
     payment_addresses = models.JSONField(default=dict, blank=True, null=True)  # JSON object with payment addresses
     network = models.CharField(max_length=50, default='mainnet')  # 'mainnet' or 'testnet'
 
-
+class Offer(models.Model):
+    provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  # Link to a Provider
+    task = models.ForeignKey('Task', on_delete=models.CASCADE)  # Link to a Task
+    offer = models.JSONField(default=dict)  # JSON object with offer data
 
 
 class DiskBenchmark(models.Model):
@@ -79,12 +82,19 @@ class CpuBenchmark(models.Model):
     sum_latency_ms = models.FloatField()
 
 
+class Task(models.Model):
+    name= models.CharField(max_length=255)  # Name of the task
+    started_at = models.DateTimeField(default=timezone.now)  # When the task was started
+    finished_at = models.DateTimeField(null=True)  # When the task was finished
+
+
 class TaskCompletion(models.Model):
     provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  # Link to a Node model
     task_name = models.CharField(max_length=255)  # A descriptive name or identifier for the task
     is_successful = models.BooleanField(default=False)  # Whether the task was completed successfully
     error_message = models.TextField(null=True)  # Error message if the task failed
     timestamp = models.DateTimeField(auto_now_add=True)  # When the record was created
+    task= models.ForeignKey('Task', on_delete=models.CASCADE, null=True)  # Link to a Task model
 
 
 
@@ -93,6 +103,7 @@ class PingResult(models.Model):
     is_p2p = models.BooleanField(default=False)  # Whether it's peer-to-peer
     ping_tcp = models.IntegerField()  # Ping result for TCP, e.g., 96
     ping_udp = models.IntegerField()  # Ping result for UDP, e.g., 96
+
 
 
 

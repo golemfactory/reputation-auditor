@@ -131,3 +131,4 @@ dist
 ping-checker/output-*
 .DS_Store
 docker-stack/.vscode/settings.json
+docker-stack/key.json

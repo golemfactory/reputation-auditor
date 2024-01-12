@@ -22,3 +22,19 @@ touch /golem/work/yagna.log
 echo "Starting Yagna"
 YAGNA_AUTOCONF_APPKEY=reputation /root/.local/bin/yagna service run >/dev/null 2>&1 &
 sleep 5
+
+# Check if /key.json exists and restore wallet
+if [ -f "/key.json" ]; then
+    echo "Restoring wallet from /key.json"
+    address=$(jq -r '.address' /key.json)
+    echo "Found wallet with address: 0x${address}"
+    yagna id create --from-keystore /key.json
+    /root/.local/bin/yagna id update --set-default 0x${address}
+    killall yagna
+    sleep 5
+    rm $HOME/.local/share/yagna/accounts.json
+
+    YAGNA_AUTOCONF_APPKEY=reputation /root/.local/bin/yagna service run >/dev/null 2>&1 &
+    sleep 5
+    echo "Wallet restored"
+fi

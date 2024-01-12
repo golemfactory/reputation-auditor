@@ -1,6 +1,7 @@
 from ninja import Schema
 from typing import Optional
 
+from datetime import datetime
 
 class ProviderSuccessRate(Schema):
     node_id: str
@@ -9,6 +10,11 @@ class ProviderSuccessRate(Schema):
     wallet_address: Optional[dict]   
     success_rate: float
 
+
+class ProposalSchema(Schema):
+    offer = dict
+    task_id: int
+    node_id: str
 
 class DiskBenchmarkSchema(Schema):
     node_id: str
@@ -65,3 +71,12 @@ class TaskCompletionSchema(Schema):
     task_name: str
     is_successful: bool
     error_message: str = None
+    task_id: int
+
+
+
+class TaskCreateSchema(Schema):
+    name: str
+
+class TaskUpdateSchema(Schema):
+    finished_at: Optional[datetime] = None
