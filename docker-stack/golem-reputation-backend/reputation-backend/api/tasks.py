@@ -19,8 +19,8 @@ def monitor_nodes_task(subnet_tag='public'):
 
 
 @app.task
-def ping_providers_task():
-    asyncio.run(ping_providers())
+def ping_providers_task(p2p):
+    asyncio.run(ping_providers(p2p))
     
 
 @app.task(queue='benchmarker', options={'queue': 'benchmarker', 'routing_key': 'benchmarker'})
