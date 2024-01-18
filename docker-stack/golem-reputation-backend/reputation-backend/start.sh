@@ -20,6 +20,7 @@ esac
 mkdir -p /golem/work
 touch /golem/work/yagna.log
 echo "Starting Yagna"
+export YA_NET_BIND_URL=udp://0.0.0.0:11500
 YAGNA_AUTOCONF_APPKEY=reputation /root/.local/bin/yagna service run >/dev/null 2>&1 &
 sleep 5
 
