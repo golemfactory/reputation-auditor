@@ -34,7 +34,7 @@ if [ -f "/key.json" ]; then
     sleep 5
     rm $HOME/.local/share/yagna/accounts.json
 
-    YAGNA_AUTOCONF_APPKEY=reputation /root/.local/bin/yagna service run >/dev/null 2>&1 &
+    YA_NET_BIND_URL=udp://0.0.0.0:11500 YAGNA_AUTOCONF_APPKEY=reputation /root/.local/bin/yagna service run >/dev/null 2>&1 &
     sleep 5
     echo "Wallet restored"
 fi
