@@ -25,7 +25,7 @@ async def async_bulk_create_ping_results(all_data, p2p):
             PingResultP2P.objects.bulk_create(all_data)
 
     # Use sync_to_async to convert it and immediately invoke
-    await sync_to_async(bulk_create(p2p), thread_sensitive=True)()
+    await sync_to_async(bulk_create, thread_sensitive=True)(p2p)
 
 
 def parse_ping_time(ping_time_str):
