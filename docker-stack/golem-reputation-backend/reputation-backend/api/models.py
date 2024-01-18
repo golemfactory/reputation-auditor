@@ -104,6 +104,12 @@ class PingResult(models.Model):
     ping_tcp = models.IntegerField()  # Ping result for TCP, e.g., 96
     ping_udp = models.IntegerField()  # Ping result for UDP, e.g., 96
 
+class PingResultP2P(models.Model):
+    provider = models.ForeignKey(Provider, on_delete=models.CASCADE)  # Link to a Provider
+    is_p2p = models.BooleanField(default=False)  # Whether it's peer-to-peer
+    ping_tcp = models.IntegerField()  # Ping result for TCP, e.g., 96
+    ping_udp = models.IntegerField()  # Ping result for UDP, e.g., 96
+
 
 
 

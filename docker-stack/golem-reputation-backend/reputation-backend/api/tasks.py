@@ -23,9 +23,9 @@ def ping_providers_task():
     asyncio.run(ping_providers())
     
 
-@app.task
+@app.task(queue='benchmarker', options={'queue': 'benchmarker', 'routing_key': 'benchmarker'})
 def benchmark_providers_task():
-    testnet_provider_count = Provider.objects.filter(network='testnet').count()
+    testnet_provider_count = Provider.objects.filter(network='mainnet').count()
     print(f"Found {testnet_provider_count} providers on testnet")
     command = f"cd /benchmark && yagna payment fund && npm run benchmark -- {testnet_provider_count}"
     with subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) as proc:

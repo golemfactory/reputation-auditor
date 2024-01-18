@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 import json
 from collections import defaultdict
 from django.db.models import Avg, Count, Q
+from .tasks import benchmark_providers_task
 
 api = NinjaAPI()
 import redis
@@ -253,7 +254,11 @@ def blacklisted_providers(request):
             timestamp__gte=now - timedelta(days=3)  # Assuming we look at the last 3 days
         ).count()
 
-        backoff_hours = 10 * (2 ** (consecutive_failures - 1))  # Exponential backoff formula starting from 10 hours
+        # Apply a cap to the consecutive_failures
+        max_consecutive_failures = 6  # Maximum failures to keep backoff within 14 days
+        effective_failures = min(consecutive_failures, max_consecutive_failures)
+
+        backoff_hours = 10 * (2 ** (effective_failures - 1))  # Exponential backoff formula
         next_eligible_date = provider.taskcompletion_set.latest('timestamp').timestamp + timedelta(hours=backoff_hours)
 
         if now < next_eligible_date:
@@ -297,3 +302,9 @@ def store_offer(request, task_id: int):
         return JsonResponse({"status": "error", "error": str(e)}, status=500)
 
     return JsonResponse({"status": "success", "error": "Offer stored in Redis"})
+
+
+@api.get("/benchmark")
+def start_benchmark(request, ):
+    benchmark_providers_task.delay()
+    return {"status": "ok"}

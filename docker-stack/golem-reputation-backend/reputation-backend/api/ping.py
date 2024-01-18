@@ -1,7 +1,7 @@
 import asyncio
 import json
 import subprocess
-from .models import NodeStatus, PingResult
+from .models import NodeStatus, PingResult, PingResultP2P
 from asgiref.sync import sync_to_async
 
 
@@ -16,13 +16,16 @@ async def async_fetch_node_ids():
     return node_ids
 
 
-async def async_bulk_create_ping_results(all_data):
+async def async_bulk_create_ping_results(all_data, p2p):
     # Define the synchronous part as an inner function
-    def bulk_create():
-        PingResult.objects.bulk_create(all_data)
+    def bulk_create(p2p):
+        if p2p:
+            PingResult.objects.bulk_create(all_data)
+        else:
+            PingResultP2P.objects.bulk_create(all_data)
 
     # Use sync_to_async to convert it and immediately invoke
-    await sync_to_async(bulk_create, thread_sensitive=True)()
+    await sync_to_async(bulk_create(p2p), thread_sensitive=True)()
 
 
 def parse_ping_time(ping_time_str):
@@ -68,7 +71,7 @@ async def ping_provider(provider_id):
 
 
 # Main logic to process each provider ID
-async def ping_providers():
+async def ping_providers(p2p):
     node_ids = await async_fetch_node_ids()
 
     all_data = []  # This will be a list of PingResult instances
@@ -91,7 +94,7 @@ async def ping_providers():
                 ))
 
     # Use bulk_create to insert all the records into the database
-    await async_bulk_create_ping_results(all_data)
+    await async_bulk_create_ping_results(all_data, p2p)
 
 
 

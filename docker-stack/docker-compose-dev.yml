@@ -212,6 +212,39 @@ services:
                 condition: on-failure
         networks:
             - reputation
+    ping_worker_p2p:
+        command:
+            [
+                "/bin/sh",
+                "-c",
+                "/wait-for-it.sh postgres:5432 -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q pingerp2p -c 1",
+            ]
+        build:
+            context: golem-reputation-backend/.
+            dockerfile: dockerfiles/Yagna
+        image: reputation-celery-yagna:latest
+        ports:
+            - "11500:11500"
+        volumes:
+            - "./golem-reputation-backend/reputation-backend:/reputation-backend/"
+        env_file:
+            - ./.envs-dev/.django
+        healthcheck:
+            test: /check_yagna.sh || exit 1
+            interval: 15s
+            timeout: 5s
+            retries: 3
+            start_period: 15s
+        deploy:
+            replicas: 1
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: on-failure
+        networks:
+            - reputation
     celery_beat:
         build:
             context: golem-reputation-backend/.

@@ -25,9 +25,15 @@ def setup_periodic_tasks(sender, **kwargs):
     )
     sender.add_periodic_task(
         30.0,
-        ping_providers_task.s(),
+        ping_providers_task.s(p2p=False),
         queue="pinger",
         options={"queue": "pinger", "routing_key": "pinger"},
+    )
+    sender.add_periodic_task(
+        30.0,
+        ping_providers_task.s(p2p=True),
+        queue="pingerp2p",
+        options={"queue": "pingerp2p", "routing_key": "pingerp2p"},
     )
     sender.add_periodic_task(
         # crontab(hour="*/8"),

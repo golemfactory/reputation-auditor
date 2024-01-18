@@ -33,7 +33,7 @@ const benchmarkTest = async (ctx: any, node_id: string, testName: string, script
     console.log(`BENCHMARKING ${testName.toUpperCase()} on node:`, node_id, ctx.provider.name)
     const benchmarkResult = await ctx.run(`${scriptName} ${node_id}`)
     if (benchmarkResult.result === "Error") {
-        await logAndSubmitFailure(node_id, `Benchmark ${testName}`, benchmarkResult.stdout, taskId)
+        await logAndSubmitFailure(node_id, `Benchmark ${testName}`, benchmarkResult.stdout ?? benchmarkResult.stderr ?? testName, taskId)
         return false
     }
 
@@ -59,7 +59,7 @@ export async function runProofOfWork(numOfChecks: number, budget: null | number)
         throw new Error("Failed to send start task signal")
     }
 
-    const EXPECTED_EXECUTION_TIME_SECONDS = 60 * 10
+    const EXPECTED_EXECUTION_TIME_SECONDS = 60 * 20
     const EXPECTED_DEPLOYMENT_TIME_SECONDS = 60
     const EXPECTED_TOTAL_DURATION_SECONDS = EXPECTED_EXECUTION_TIME_SECONDS + EXPECTED_DEPLOYMENT_TIME_SECONDS
 
@@ -144,10 +144,18 @@ export async function runProofOfWork(numOfChecks: number, budget: null | number)
                             },
                         }
                     } catch (err) {
-                        console.log("Activity failed!", err)
+                        const errorMessage = typeof err === "string" ? err : "unknown error"
+                        console.log("Activity failed!", errorMessage)
+
                         blacklistedProviders.push(providerId)
 
-                        throw err
+                        await submitTaskStatus({
+                            node_id: providerId,
+                            task_name: "Full benchmark suite",
+                            is_successful: false,
+                            error_message: errorMessage,
+                            task_id: taskId,
+                        })
                     } finally {
                         console.log(`Finished benchmarking on provider: ${providerId}`)
                     }

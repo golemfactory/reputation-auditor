@@ -175,7 +175,7 @@ export class Golem {
         this.paymentService = new PaymentService(this.api, {
             logger: createLogger("golem-js:payment"),
             payment: {
-                network: process.env["GOLEM_PAYMENT_NETWORK"] ?? "goerli",
+                network: process.env["GOLEM_PAYMENT_NETWORK"] ?? "polygon",
             },
         })
 
@@ -187,7 +187,7 @@ export class Golem {
 
     async start() {
         const allocation = await this.paymentService.createAllocation({
-            budget: this.config.market.budget ?? this.getBudgetEstimate(),
+            budget: 370,
             expires: this.getExpectedDurationSeconds() * 1000,
         })
 
@@ -374,7 +374,7 @@ export class Golem {
         const budget = this.config.market.budget ?? this.getBudgetEstimate()
         const budgetPerReplica = budget / maxReplicas
 
-        const estimate = this.estimateProposal(proposal)
+        const estimate = this.estimateProposal(proposal) * 2
         console.log(`Estimate: ${estimate}, budgetPerReplica: ${budgetPerReplica}, provider: ${proposal.provider.id}`)
         return estimate <= budgetPerReplica
     }
