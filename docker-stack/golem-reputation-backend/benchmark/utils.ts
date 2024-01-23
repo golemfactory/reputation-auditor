@@ -64,11 +64,11 @@ export async function getBlacklistedProviders(): Promise<string[] | undefined> {
             const data = (await response.json()) as string[]
             return data
         } else {
-            const errorBody = await response.json()
-            throw errorBody
+            process.exit(1)
         }
     } catch (error) {
         console.error("Error:", error)
+        process.exit(1)
     }
 }
 

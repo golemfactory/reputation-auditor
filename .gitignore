@@ -132,3 +132,10 @@ ping-checker/output-*
 .DS_Store
 docker-stack/.vscode/settings.json
 docker-stack/key.json
+uptime/average_uptime_by_region.png
+uptime/europe_uptime.csv
+uptime/providers_by_uptime_zone.png
+uptime/uptime_distribution_by_region.png
+uptime/uptime_consistency_by_region.png
+uptime/us_uptime.csv
+uptime/asia_uptime.csv

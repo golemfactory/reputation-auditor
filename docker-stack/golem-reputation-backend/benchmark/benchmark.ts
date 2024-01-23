@@ -1,16 +1,31 @@
 import { Golem, GolemError } from "./golem"
 import { submitTaskStatus, submitBenchmark, getBlacklistedProviders, sendStartTaskSignal, sendStopTaskSignal } from "./utils"
 
+let blacklistedProviders: string[] = []
+
 async function logAndSubmitFailure(node_id: string, task_name: string, error_message: string, taskId: string): Promise<void> {
     console.log(`Benchmarking ${task_name} failed on node:`, node_id)
     // failedProvidersIds.push(node_id)
-    await submitTaskStatus({
-        node_id: node_id,
-        task_name,
-        is_successful: false,
-        error_message,
-        task_id: taskId,
-    })
+    if (!blacklistedProviders.includes(node_id)) {
+        await submitTaskStatus({
+            node_id: node_id,
+            task_name,
+            is_successful: false,
+            error_message,
+            task_id: taskId,
+        })
+    }
+}
+
+async function initializeBlacklistedProviders() {
+    try {
+        let blacklist = await getBlacklistedProviders()
+        if (blacklist) {
+            blacklistedProviders = blacklist
+        }
+    } catch (error) {
+        console.error("Failed to initialize blacklisted providers:", error)
+    }
 }
 
 const benchmarkMemoryFiles = [
@@ -58,6 +73,7 @@ export async function runProofOfWork(numOfChecks: number, budget: null | number)
     if (!taskId) {
         throw new Error("Failed to send start task signal")
     }
+    initializeBlacklistedProviders()
 
     const EXPECTED_EXECUTION_TIME_SECONDS = 60 * 20
     const EXPECTED_DEPLOYMENT_TIME_SECONDS = 60
@@ -67,11 +83,6 @@ export async function runProofOfWork(numOfChecks: number, budget: null | number)
     const DURATION_HOURS = EXPECTED_TOTAL_DURATION_SECONDS / 3600
 
     const bannedAddresses = <string[]>[]
-
-    const blacklistedProviders = await getBlacklistedProviders()
-    if (!blacklistedProviders) {
-        throw new Error("Failed to get blacklisted providers")
-    }
 
     const REQUEST_START_TIMEOUT_SEC = 90
 
@@ -147,15 +158,18 @@ export async function runProofOfWork(numOfChecks: number, budget: null | number)
                         const errorMessage = typeof err === "string" ? err : "unknown error"
                         console.log("Activity failed!", errorMessage)
 
-                        blacklistedProviders.push(providerId)
+                        if (!blacklistedProviders.includes(providerId)) {
+                            blacklistedProviders.push(providerId)
 
-                        await submitTaskStatus({
-                            node_id: providerId,
-                            task_name: "Full benchmark suite",
-                            is_successful: false,
-                            error_message: errorMessage,
-                            task_id: taskId,
-                        })
+                            // Submit task status only if the provider is not already blacklisted
+                            await submitTaskStatus({
+                                node_id: providerId,
+                                task_name: "Full benchmark suite",
+                                is_successful: false,
+                                error_message: errorMessage,
+                                task_id: taskId,
+                            })
+                        }
                     } finally {
                         console.log(`Finished benchmarking on provider: ${providerId}`)
                     }

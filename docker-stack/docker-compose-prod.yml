@@ -162,6 +162,8 @@ services:
         image: ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:latest
         env_file:
             - ./.envs/.django
+        volumes:
+            - "./key.json:/key.json"
         healthcheck:
             test: /check_yagna.sh || exit 1
             interval: 15s
