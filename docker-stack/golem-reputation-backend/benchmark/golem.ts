@@ -333,6 +333,10 @@ export class Golem {
         // TODO #sdk Have a nice property access to this
         const threadsNo = proposal.properties["golem.inf.cpu.threads"]
 
+        if (proposal.pricing.start > 0) {
+            return 9999999999
+        }
+
         return proposal.pricing.start + proposal.pricing.cpuSec * threadsNo * budgetSeconds + proposal.pricing.envSec * budgetSeconds
     }
 
@@ -374,7 +378,7 @@ export class Golem {
         const budget = this.config.market.budget ?? this.getBudgetEstimate()
         const budgetPerReplica = budget / maxReplicas
 
-        const estimate = this.estimateProposal(proposal) * 2
+        const estimate = this.estimateProposal(proposal) * 10
         console.log(`Estimate: ${estimate}, budgetPerReplica: ${budgetPerReplica}, provider: ${proposal.provider.id}`)
         return estimate <= budgetPerReplica
     }
