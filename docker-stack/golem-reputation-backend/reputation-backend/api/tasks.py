@@ -27,7 +27,7 @@ def ping_providers_task(p2p):
 def benchmark_providers_task():
     testnet_provider_count = Provider.objects.filter(network='mainnet').count()
     print(f"Found {testnet_provider_count} providers on testnet")
-    command = f"cd /benchmark && yagna payment fund && npm run benchmark -- {testnet_provider_count}"
+    command = f"cd /benchmark && yagna payment fund && yagna payment release-allocations && npm run benchmark -- 3000"
     with subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) as proc:
         while True:
             output = proc.stdout.readline()

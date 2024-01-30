@@ -373,6 +373,7 @@ export class Golem {
     }
 
     private isWithinBudget(proposal: Proposal) {
+        return true
         const { maxReplicas } = this.config.deploy
 
         const budget = this.config.market.budget ?? this.getBudgetEstimate()
@@ -380,6 +381,9 @@ export class Golem {
 
         const estimate = this.estimateProposal(proposal) * 10
         console.log(`Estimate: ${estimate}, budgetPerReplica: ${budgetPerReplica}, provider: ${proposal.provider.id}`)
+        if (estimate < 10) {
+            return true
+        }
         return estimate <= budgetPerReplica
     }
 

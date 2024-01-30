@@ -22,6 +22,7 @@ class Offer(models.Model):
     provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  # Link to a Provider
     task = models.ForeignKey('Task', on_delete=models.CASCADE)  # Link to a Task
     offer = models.JSONField(default=dict)  # JSON object with offer data
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
 
 
 class DiskBenchmark(models.Model):

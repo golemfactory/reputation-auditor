@@ -7,3 +7,4 @@ DJANGO_SECRET=something
 ALLOWED_HOSTS=["api.localhost", "django"]
 YAGNA_APPKEY=reputation
 DOCKER=true
+ERC20NEXT_SENDOUT_INTERVAL_SECS=3600
