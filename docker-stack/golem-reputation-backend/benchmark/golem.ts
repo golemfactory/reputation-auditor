@@ -187,7 +187,7 @@ export class Golem {
 
     async start() {
         const allocation = await this.paymentService.createAllocation({
-            budget: 100,
+            budget: 40,
             expires: this.getExpectedDurationSeconds() * 1000,
         })
 
