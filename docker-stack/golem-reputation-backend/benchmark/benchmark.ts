@@ -79,7 +79,7 @@ export async function runProofOfWork(numOfChecks: number, budget: null | number)
     const EXPECTED_DEPLOYMENT_TIME_SECONDS = 60
     const EXPECTED_TOTAL_DURATION_SECONDS = EXPECTED_EXECUTION_TIME_SECONDS + EXPECTED_DEPLOYMENT_TIME_SECONDS
 
-    const PRICE_GLM_HOUR = parseFloat(process.env["GNV_PRICE_GLM_HOUR"] ?? "3")
+    const PRICE_GLM_HOUR = parseFloat(process.env["PRICE_GLM_HOUR"] ?? "3")
     const DURATION_HOURS = EXPECTED_TOTAL_DURATION_SECONDS / 3600
 
     const bannedAddresses = <string[]>[]
@@ -100,9 +100,7 @@ export async function runProofOfWork(numOfChecks: number, budget: null | number)
             budget: budget,
             priceGlmPerHour: PRICE_GLM_HOUR,
             rentHours: DURATION_HOURS,
-            // withProviders
             withoutProviders: blacklistedProviders,
-            // withOperator
             withoutOperators: bannedAddresses,
         },
         taskId: taskId,

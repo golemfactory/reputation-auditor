@@ -187,6 +187,7 @@ export class Golem {
 
     async start() {
         const allocation = await this.paymentService.createAllocation({
+            // Hardcoded for now
             budget: 40,
             expires: this.getExpectedDurationSeconds() * 1000,
         })
@@ -333,6 +334,7 @@ export class Golem {
         // TODO #sdk Have a nice property access to this
         const threadsNo = proposal.properties["golem.inf.cpu.threads"]
 
+        // Ugly way of denying a start price
         if (proposal.pricing.start > 0) {
             return 9999999999
         }
@@ -373,17 +375,14 @@ export class Golem {
     }
 
     private isWithinBudget(proposal: Proposal) {
-        return true
         const { maxReplicas } = this.config.deploy
 
         const budget = this.config.market.budget ?? this.getBudgetEstimate()
         const budgetPerReplica = budget / maxReplicas
 
-        const estimate = this.estimateProposal(proposal) * 10
+        const estimate = this.estimateProposal(proposal)
         console.log(`Estimate: ${estimate}, budgetPerReplica: ${budgetPerReplica}, provider: ${proposal.provider.id}`)
-        if (estimate < 10) {
-            return true
-        }
+      
         return estimate <= budgetPerReplica
     }
 
