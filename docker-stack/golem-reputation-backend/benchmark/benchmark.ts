@@ -81,7 +81,7 @@ interface GolemTaskResult {
     }
 }
 
-export async function runProofOfWork(numOfChecks: number, budget: null | number) {
+export async function runProofOfWork(numOfChecks: number, pricePerHour: null | number) {
     const events = new EventTarget()
     let totalRunCost = 0
     const providerRunCost = new Map<string, number>()
@@ -124,7 +124,7 @@ export async function runProofOfWork(numOfChecks: number, budget: null | number)
             readyTimeoutSec: EXPECTED_DEPLOYMENT_TIME_SECONDS,
         },
         market: {
-            budget: budget,
+            // budget: pricePerHour,
             priceGlmPerHour: PRICE_GLM_HOUR,
             rentHours: DURATION_HOURS,
             withoutProviders: blacklistedProviders,
@@ -280,18 +280,18 @@ export async function runProofOfWork(numOfChecks: number, budget: null | number)
 }
 
 // // This function triggers runProofOfWork with the provided number of runs
-function triggerRunProofOfWork(num: number, budget: null | number): void {
-    runProofOfWork(num, budget).catch((err) => {
+function triggerRunProofOfWork(num: number, pricePerHour: null | number): void {
+    runProofOfWork(num, pricePerHour).catch((err) => {
         console.log(err)
     })
 }
 
 // Get the number of runs from the command line arguments
 const numRuns = parseInt(process.argv[2])
-const budget = process.argv[3] ? parseInt(process.argv[3]) : null
+const pricePerHour = process.argv[3] ? parseInt(process.argv[3]) : null
 // Check if the number of runs is a valid number
 if (!isNaN(numRuns)) {
-    triggerRunProofOfWork(numRuns, budget)
+    triggerRunProofOfWork(numRuns, pricePerHour)
 } else {
     console.log("Please provide a valid number of runs.")
 }
