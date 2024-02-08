@@ -74,6 +74,9 @@ class TaskCompletionSchema(Schema):
     task_id: int
 
 
+class TaskCostUpdateSchema(Schema):
+    provider_id: str
+    cost: float
 
 class TaskCreateSchema(Schema):
     name: str

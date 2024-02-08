@@ -1,5 +1,12 @@
 import { Golem, GolemError } from "./golem"
-import { submitTaskStatus, submitBenchmark, getBlacklistedProviders, sendStartTaskSignal, sendStopTaskSignal } from "./utils"
+import {
+    submitTaskStatus,
+    submitBenchmark,
+    getBlacklistedProviders,
+    sendStartTaskSignal,
+    sendStopTaskSignal,
+    sendTaskCostUpdate,
+} from "./utils"
 
 let blacklistedProviders: string[] = []
 
@@ -54,7 +61,13 @@ const benchmarkTest = async (ctx: any, node_id: string, testName: string, script
 
     for (const filePath of filePaths) {
         const performanceData = await ctx.run(`cat /golem/work/${filePath}.json`)
-        await submitBenchmark(performanceData.stdout, testName.toLowerCase())
+        console.log(performanceData)
+        if (!performanceData.stdout) {
+            await logAndSubmitFailure(node_id, `Benchmark ${testName}`, `No performance data for ${filePath}`, taskId)
+            return false
+        } else {
+            await submitBenchmark(performanceData.stdout, testName.toLowerCase())
+        }
     }
     return true
 }
@@ -69,6 +82,20 @@ interface GolemTaskResult {
 }
 
 export async function runProofOfWork(numOfChecks: number, budget: null | number) {
+    const events = new EventTarget()
+    let totalRunCost = 0
+    const providerRunCost = new Map<string, number>()
+
+    events.addEventListener("GolemEvent", (event: any) => {
+        if (event.name === "PaymentAccepted") {
+            // console.log(event.detail)
+            const cost = Number(event.detail.amount)
+            totalRunCost += cost
+            // providerRunCost.set(event.detail.provider.id, cost)
+            providerRunCost.set(event.detail.providerId, cost)
+        }
+    })
+
     const taskId = await sendStartTaskSignal()
     if (!taskId) {
         throw new Error("Failed to send start task signal")
@@ -105,6 +132,7 @@ export async function runProofOfWork(numOfChecks: number, budget: null | number)
         },
         taskId: taskId,
         computedAlready: blacklistedProviders,
+        eventTarget: events,
     })
 
     console.log("Preparing activities to run the suite")
@@ -116,10 +144,11 @@ export async function runProofOfWork(numOfChecks: number, budget: null | number)
 
         // FIXME #sdk This code suffers from the same illness - some of the providers fail to init the activity, and I don't have a easy way to access this info ('Preparing activity timeout' example)
         for (let i = 0; i < numOfChecks; i++) {
+            console.log(`Scheduling task #${i}`)
             tasks.push(
                 golem.sendTask<GolemTaskResult | undefined>(async (ctx: any) => {
                     const providerId = ctx.provider!.id
-
+                    console.log(`Task #${i} started on provider `, providerId)
                     try {
                         const memory = await benchmarkTest(ctx, providerId, "memory", `/benchmark-memory.sh`, benchmarkMemoryFiles, taskId)
                         if (!memory) {
@@ -153,18 +182,25 @@ export async function runProofOfWork(numOfChecks: number, budget: null | number)
                             },
                         }
                     } catch (err) {
-                        const errorMessage = typeof err === "string" ? err : "unknown error"
-                        console.log("Activity failed!", errorMessage)
+                        const errorMessage = err && typeof err === "object" && "message" in err ? err.message : err
+                        console.log(`Task #${i} failed on provider ${providerId}:`, errorMessage)
 
                         if (!blacklistedProviders.includes(providerId)) {
                             blacklistedProviders.push(providerId)
-
                             // Submit task status only if the provider is not already blacklisted
                             await submitTaskStatus({
                                 node_id: providerId,
                                 task_name: "Full benchmark suite",
                                 is_successful: false,
-                                error_message: errorMessage,
+                                error_message: "Provider hit the timeout limit",
+                                task_id: taskId,
+                            })
+
+                            console.log(`Submitted failed task status for provider ${providerId} with data`, {
+                                node_id: providerId,
+                                task_name: "Full benchmark suite",
+                                is_successful: false,
+                                error_message: "Provider hit the timeout limit",
                                 task_id: taskId,
                             })
                         }
@@ -179,13 +215,18 @@ export async function runProofOfWork(numOfChecks: number, budget: null | number)
 
         const rejected = results.filter((r) => r.status === "rejected") as PromiseRejectedResult[]
 
-        const fulfilled = results.filter((r) => r.status === "fulfilled") as PromiseFulfilledResult<GolemTaskResult>[]
-
         for (const failed of rejected) {
             try {
                 if (failed.reason instanceof GolemError) {
                     if (failed.reason.activity?.agreement.provider) {
                         console.log(`Provider failed: ${failed.reason.activity?.agreement.provider.id}`, failed.reason.message)
+                        await submitTaskStatus({
+                            node_id: failed.reason.activity?.agreement.provider.id,
+                            task_name: "Full benchmark suite",
+                            is_successful: false,
+                            error_message: "Provider failed to deploy the activity",
+                            task_id: taskId,
+                        })
                     }
                 } else if (failed.reason instanceof Error && failed.reason.name === "TimeoutError") {
                     console.warn(
@@ -213,14 +254,30 @@ export async function runProofOfWork(numOfChecks: number, budget: null | number)
         console.warn(err, "Failed to run the tests due to an error")
     } finally {
         await golem.stop()
+
+        console.log("Costs:")
+        for (const key of providerRunCost.keys()) {
+            const cost = providerRunCost.get(key)
+
+            if (typeof cost === "number") {
+                console.log(`> ${key}: ${cost}`)
+
+                await sendTaskCostUpdate(taskId, key, cost)
+            } else {
+                console.error(`Cost for provider ${key} is undefined`)
+            }
+        }
+
+        console.log(`Total running cost: ${totalRunCost}`)
+
         if (taskId) {
-            await sendStopTaskSignal(taskId)
+            // WE NEED TO ATTACH TOTAL SUM OF EVERYTHING TO THE TASK
+            await sendStopTaskSignal(taskId, totalRunCost)
         } else {
             throw new Error("Failed to send stop task signal")
         }
     }
 }
-import process from "process"
 
 // // This function triggers runProofOfWork with the provided number of runs
 function triggerRunProofOfWork(num: number, budget: null | number): void {

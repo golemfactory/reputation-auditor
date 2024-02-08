@@ -127,7 +127,9 @@ export interface GolemConfig {
          * You can obtain this from `yagna app-key list` command.
          */
         key: string
-    }
+    },
+
+    eventTarget?: EventTarget;
 }
 
 export class Golem {
@@ -143,7 +145,9 @@ export class Golem {
 
     private readonly logger: Debugger
 
-    public config: GolemConfig
+    public config: GolemConfig;
+
+    private usedProviders = new Set<string>();
 
     constructor(config: GolemConfig) {
         this.logger = debug("golem")
@@ -161,12 +165,26 @@ export class Golem {
 
         this.agreementService = new AgreementPoolService(this.api, {
             logger: createLogger("golem-js:agreement"),
+            agreementSelector: async (candidates) => {
+                for(const candidate of candidates) {
+                    if (this.usedProviders.has(candidate.proposal.provider.id)) {
+                        continue;
+                    }
+
+                    this.usedProviders.add(candidate.proposal.provider.id);
+                    return candidate;
+                }
+
+                throw new Error('===== NO AGREEMENT FOUND!');
+            },
+            eventTarget: config.eventTarget,
         })
 
         this.marketService = new MarketService(this.agreementService, this.api, {
             expirationSec: 60 * 10,
             logger: createLogger("golem-js:market"),
             proposalFilter: this.buildProposalFilter(),
+            eventTarget: config.eventTarget,
         })
 
         // TODO: The amount to allocate should not be set in the constructor :(
@@ -177,6 +195,7 @@ export class Golem {
             payment: {
                 network: process.env["GOLEM_PAYMENT_NETWORK"] ?? "polygon",
             },
+            eventTarget: config.eventTarget,
         })
 
         // FIXME: This internally allocates resources like child processes
@@ -188,7 +207,7 @@ export class Golem {
     async start() {
         const allocation = await this.paymentService.createAllocation({
             // Hardcoded for now
-            budget: 40,
+            budget: 50,
             expires: this.getExpectedDurationSeconds() * 1000,
         })
 
@@ -231,7 +250,7 @@ export class Golem {
             this.logger(`Running the task on Golem failed with this error: %o`, err)
             throw new GolemError("Failed to execute the task on Golem", err, activity)
         } finally {
-            await this.activityPool.release(activity)
+            await this.activityPool.destroy(activity)
             this.logger("Released activity %s after task execution", activity.id)
         }
     }
@@ -270,11 +289,15 @@ export class Golem {
 
                     const MIN_ACTIVITY_DURATION = 5 * 60
                     // FIXME #sdk Use Agreement and not string
-                    return Activity.create(agreement, this.api, {
+                    
+                    const activity = await Activity.create(agreement, this.api, {
                         // activityExecuteTimeout: (this.config.requestTimeoutSec ?? MIN_ACTIVITY_DURATION) * 1000,
                         activityExecuteTimeout: MIN_ACTIVITY_DURATION * 1000,
                         activityExeBatchResultPollIntervalSeconds: 20,
-                    })
+                    });
+
+                    console.log(`Activity ${activity.id} on ${activity.agreement.provider.id}`);
+                    return activity;
                 },
                 destroy: async (activity: Activity) => {
                     this.logger("Destroying activity from the pool")
@@ -345,6 +368,7 @@ export class Golem {
     private buildProposalFilter(): ProposalFilter {
         return async (proposal) => {
             await sendOfferFromProvider(proposal.properties, proposal.provider.id, this.config.taskId)
+            return true
 
             if (this.isFromDisallowedOperator(proposal)) {
                 // this.logger(

@@ -41,6 +41,7 @@ export async function submitBenchmark(benchmarkData: string, type: string): Prom
             return "Benchmark submitted successfully!"
         } else {
             console.log(`Error in benchmark submission: ${benchmarkData}`)
+            console.log(benchmarkData)
             const errorBody = await response.json()
             throw errorBody
         }
@@ -101,12 +102,12 @@ export async function sendStartTaskSignal(): Promise<string | undefined> {
     }
 }
 
-export async function sendStopTaskSignal(taskId: string): Promise<string | undefined> {
+export async function sendStopTaskSignal(taskId: string, cost: number): Promise<string | undefined> {
     try {
-        const endpoint = `http://${URL}/v1/task/end/${taskId}`
-
+        const endpoint = `http://${URL}/v1/task/end/${taskId}?cost=${cost}`
+        console.log(`Sending stop signal to ${endpoint}`, cost, taskId)
         const response = await fetch(endpoint, {
-            method: "PUT",
+            method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 // Include other headers as required, like authentication tokens
@@ -150,5 +151,35 @@ export async function sendOfferFromProvider(offer: {}, nodeId: string, taskId: s
         }
     } catch (error) {
         console.error("Error:", error)
+    }
+}
+
+
+export async function sendTaskCostUpdate(taskId: string, providerId: string, cost: number): Promise<string | undefined> {
+    try {
+        const endpoint = `http://${URL}/v1/task/update-cost/${Number(taskId)}`;
+        const data = JSON.stringify({
+            provider_id: providerId,
+            cost: Number(cost),
+        });
+        const response = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                // Include other headers as required, such as authentication tokens.
+            },
+            body: data,
+        });
+
+        if (response.ok) {
+            return "success";
+        } else {
+            console.error(`Error in sending task cost update: ${data}`);
+            const errorBody = await response.json() as { error: string };
+            console.error(errorBody);
+        }
+    } catch (error) {
+        console.error("Error:", error);
+        return undefined;
     }
 }

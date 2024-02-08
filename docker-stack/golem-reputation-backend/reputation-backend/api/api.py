@@ -1,6 +1,6 @@
 from ninja import NinjaAPI, Path
 from .models import DiskBenchmark, CpuBenchmark, MemoryBenchmark, Provider, TaskCompletion, PingResult, NodeStatus, Task, Offer
-from .schemas import DiskBenchmarkSchema, CpuBenchmarkSchema, MemoryBenchmarkSchema, TaskCompletionSchema, ProviderSuccessRate, TaskCreateSchema, TaskUpdateSchema, ProposalSchema
+from .schemas import DiskBenchmarkSchema, CpuBenchmarkSchema, MemoryBenchmarkSchema, TaskCompletionSchema, ProviderSuccessRate, TaskCreateSchema, TaskUpdateSchema, ProposalSchema, TaskCostUpdateSchema
 from django.shortcuts import get_object_or_404
 from django.http import JsonResponse
 from typing import Any, Dict, List
@@ -102,6 +102,7 @@ def create_task_completion(request, data: TaskCompletionSchema):
             task_name=data.task_name,
             is_successful=data.is_successful,
             error_message=data.error_message,
+            task=Task.objects.get(id=data.task_id)
             
         )
         return {"status": "success", "message": "Task completion data saved successfully",}
@@ -272,15 +273,45 @@ def start_task(request, payload: TaskCreateSchema):
     task = Task.objects.create(name=payload.name, started_at=timezone.now())
     return {"id": task.id, "name": task.name, "started_at": task.started_at}
 
-@api.put("/task/end/{task_id}")
-def end_task(request, task_id: int):
+@api.post("/task/end/{task_id}")
+def end_task(request, task_id: int, cost: float):
     try:
         task = Task.objects.get(id=task_id)
     except Task.DoesNotExist:
         return JsonResponse({"status": "error", "message": "Task does not exist"}, status=404)
     task.finished_at = timezone.now()
+    task.cost = cost
     task.save()
     return {"id": task.id, "finished_at": task.finished_at}
+
+from django.shortcuts import get_object_or_404
+
+@api.post("/task/update-cost/{task_id}")
+def update_task_cost(request, task_id: int, payload: TaskCostUpdateSchema):
+    try:
+        # Directly fetch the TaskCompletion instance with related Task and Provider
+        task_completion = get_object_or_404(
+            TaskCompletion.objects.select_related('provider', 'task'),
+            provider__node_id=payload.provider_id,  # Assuming node_id is the field in Provider model
+            task_id=task_id
+        )
+
+        # Update the cost
+        task_completion.cost = payload.cost
+        task_completion.save()
+
+        return JsonResponse({"status": "success", "message": "Task cost updated successfully"})
+
+    except Task.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Task not found"}, status=404)
+    except Provider.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Provider not found"}, status=404)
+    except Exception as e:
+        # Log the exception for debugging
+        print(e)
+        return JsonResponse({"status": "error", "message": "An error occurred"}, status=500)
+
+
 
 
 redis_client = redis.Redis(host='redis', port=6379, db=0)  # Update with your Redis configuration

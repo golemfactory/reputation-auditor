@@ -87,6 +87,7 @@ class Task(models.Model):
     name= models.CharField(max_length=255)  # Name of the task
     started_at = models.DateTimeField(default=timezone.now)  # When the task was started
     finished_at = models.DateTimeField(null=True)  # When the task was finished
+    cost = models.FloatField(null=True)  # Cost of the task in GLM
 
 
 class TaskCompletion(models.Model):
@@ -96,6 +97,7 @@ class TaskCompletion(models.Model):
     error_message = models.TextField(null=True)  # Error message if the task failed
     timestamp = models.DateTimeField(auto_now_add=True)  # When the record was created
     task= models.ForeignKey('Task', on_delete=models.CASCADE, null=True)  # Link to a Task model
+    cost = models.FloatField(null=True)  # Cost of the task in GLM
 
 
 
