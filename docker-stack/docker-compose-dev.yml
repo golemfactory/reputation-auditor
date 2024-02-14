@@ -1,6 +1,6 @@
 version: "3.8"
 volumes:
-    db_data: {}
+    db_data_reputation: {}
     pgadmin:
 services:
     pgadmin:
@@ -166,6 +166,7 @@ services:
         volumes:
             - "./golem-reputation-backend/reputation-backend:/reputation-backend/"
             - "./golem-reputation-backend/benchmark:/benchmark/"
+            - "./benchmarker-datadir:/root/.local/share/yagna/"
             - "./key.json:/key.json"
         env_file:
             - ./.envs-dev/.django
@@ -272,7 +273,7 @@ services:
         env_file:
             - ./.envs-dev/.db
         volumes:
-            - "db_data:/var/lib/postgresql/data"
+            - "db_data_reputation:/var/lib/postgresql/data"
         networks:
             - reputation
         deploy:

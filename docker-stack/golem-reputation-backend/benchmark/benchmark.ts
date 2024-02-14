@@ -1,34 +1,44 @@
 import { Golem, GolemError } from "./golem"
 import {
-    submitTaskStatus,
-    submitBenchmark,
+    bulkSubmitTaskStatuses,
     getBlacklistedProviders,
+    getBlacklistedOperators,
     sendStartTaskSignal,
     sendStopTaskSignal,
-    sendTaskCostUpdate,
+    sendBulkTaskCostUpdates,
+    fetchProvidersData,
+    submitBulkBenchmark,
 } from "./utils"
-
+import { TaskCompletion, Benchmark } from "./types"
 let blacklistedProviders: string[] = []
+let blacklistedOperators: string[] = []
+let failedProvidersIds: string[] = []
+let accumulatedBenchmarkData: Benchmark[] = []
 
+const taskStatuses = <TaskCompletion[]>[]
 async function logAndSubmitFailure(node_id: string, task_name: string, error_message: string, taskId: string): Promise<void> {
     console.log(`Benchmarking ${task_name} failed on node:`, node_id)
-    // failedProvidersIds.push(node_id)
-    if (!blacklistedProviders.includes(node_id)) {
-        await submitTaskStatus({
+    if (!failedProvidersIds.includes(node_id)) {
+        taskStatuses.push({
             node_id: node_id,
             task_name,
             is_successful: false,
             error_message,
-            task_id: taskId,
+            task_id: Number(taskId),
         })
+        failedProvidersIds.push(node_id)
     }
 }
 
-async function initializeBlacklistedProviders() {
+async function initializeBlacklists() {
     try {
-        let blacklist = await getBlacklistedProviders()
-        if (blacklist) {
-            blacklistedProviders = blacklist
+        let providerBlacklist = await getBlacklistedProviders()
+        if (providerBlacklist) {
+            blacklistedProviders = providerBlacklist
+        }
+        let operatorBlacklist = await getBlacklistedOperators()
+        if (operatorBlacklist) {
+            blacklistedOperators = operatorBlacklist
         }
     } catch (error) {
         console.error("Failed to initialize blacklisted providers:", error)
@@ -61,12 +71,18 @@ const benchmarkTest = async (ctx: any, node_id: string, testName: string, script
 
     for (const filePath of filePaths) {
         const performanceData = await ctx.run(`cat /golem/work/${filePath}.json`)
-        console.log(performanceData)
         if (!performanceData.stdout) {
             await logAndSubmitFailure(node_id, `Benchmark ${testName}`, `No performance data for ${filePath}`, taskId)
             return false
         } else {
-            await submitBenchmark(performanceData.stdout, testName.toLowerCase())
+            try {
+                // The data is already JSON formatted from the provider, so we want to parse it and then submit the final array JSON formatted
+                const benchmarkDataObject = JSON.parse(performanceData.stdout)
+                accumulatedBenchmarkData.push({ type: testName.toLowerCase(), data: benchmarkDataObject })
+            } catch (error) {
+                console.error(`Error parsing JSON for ${testName} on node ${node_id}:`, performanceData.stdout)
+            }
+            // await submitBenchmark(performanceData.stdout, testName.toLowerCase())
         }
     }
     return true
@@ -100,7 +116,11 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
     if (!taskId) {
         throw new Error("Failed to send start task signal")
     }
-    initializeBlacklistedProviders()
+    await initializeBlacklists()
+    const STATS_PAGE_PROVIDER_OFFERS = await fetchProvidersData()
+    if (!STATS_PAGE_PROVIDER_OFFERS) {
+        throw new Error("Failed to fetch providers data")
+    }
 
     const EXPECTED_EXECUTION_TIME_SECONDS = 60 * 20
     const EXPECTED_DEPLOYMENT_TIME_SECONDS = 60
@@ -108,8 +128,6 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
 
     const PRICE_GLM_HOUR = parseFloat(process.env["PRICE_GLM_HOUR"] ?? "3")
     const DURATION_HOURS = EXPECTED_TOTAL_DURATION_SECONDS / 3600
-
-    const bannedAddresses = <string[]>[]
 
     const REQUEST_START_TIMEOUT_SEC = 90
 
@@ -128,7 +146,8 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
             priceGlmPerHour: PRICE_GLM_HOUR,
             rentHours: DURATION_HOURS,
             withoutProviders: blacklistedProviders,
-            withoutOperators: bannedAddresses,
+            withoutOperators: blacklistedOperators,
+            statsData: STATS_PAGE_PROVIDER_OFFERS,
         },
         taskId: taskId,
         computedAlready: blacklistedProviders,
@@ -154,24 +173,32 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
                         if (!memory) {
                             throw new Error("Benchmark failed")
                         }
-                        const cpu = await benchmarkTest(ctx, providerId, "cpu", `/benchmark-cpu.sh`, benchmarkCpuFiles, taskId)
-                        if (!cpu) {
-                            throw new Error("Benchmark failed")
+                        // const cpu = await benchmarkTest(ctx, providerId, "cpu", `/benchmark-cpu.sh`, benchmarkCpuFiles, taskId)
+                        // if (!cpu) {
+                        //     throw new Error("Benchmark failed")
+                        // }
+
+                        // const disk = await benchmarkTest(ctx, providerId, "disk", `/benchmark-disk.sh`, benchmarkDiskFiles, taskId)
+
+                        // if (!disk) {
+                        //     throw new Error("Benchmark failed")
+                        // }
+                        if (!failedProvidersIds.includes(providerId)) {
+                            taskStatuses.push({
+                                node_id: providerId,
+                                task_name: "Full benchmark suite",
+                                is_successful: true,
+                                error_message: "",
+                                task_id: Number(taskId),
+                            })
+                            console.log(`Provider ${providerId} finished the benchmarking successfully, submitting task status with data`, {
+                                node_id: providerId,
+                                task_name: "Full benchmark suite",
+                                is_successful: true,
+                                error_message: "",
+                                task_id: Number(taskId),
+                            })
                         }
-
-                        const disk = await benchmarkTest(ctx, providerId, "disk", `/benchmark-disk.sh`, benchmarkDiskFiles, taskId)
-
-                        if (!disk) {
-                            throw new Error("Benchmark failed")
-                        }
-
-                        await submitTaskStatus({
-                            node_id: providerId,
-                            task_name: "Full benchmark suite",
-                            is_successful: true,
-                            error_message: "",
-                            task_id: taskId,
-                        })
 
                         return {
                             result: "success",
@@ -182,18 +209,21 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
                             },
                         }
                     } catch (err) {
+                        interface ErrorObject {
+                            [key: string]: any // This allows indexing with a string to get any value
+                        }
                         const errorMessage = err && typeof err === "object" && "message" in err ? err.message : err
-                        console.log(`Task #${i} failed on provider ${providerId}:`, errorMessage)
+                        console.log(`Task #${i} failed on provider ${providerId}:`, errorMessage, "ERROR OBJECT", err)
 
-                        if (!blacklistedProviders.includes(providerId)) {
-                            blacklistedProviders.push(providerId)
+                        if (!failedProvidersIds.includes(providerId)) {
+                            failedProvidersIds.push(providerId)
                             // Submit task status only if the provider is not already blacklisted
-                            await submitTaskStatus({
+                            taskStatuses.push({
                                 node_id: providerId,
                                 task_name: "Full benchmark suite",
                                 is_successful: false,
                                 error_message: "Provider hit the timeout limit",
-                                task_id: taskId,
+                                task_id: Number(taskId),
                             })
 
                             console.log(`Submitted failed task status for provider ${providerId} with data`, {
@@ -201,8 +231,10 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
                                 task_name: "Full benchmark suite",
                                 is_successful: false,
                                 error_message: "Provider hit the timeout limit",
-                                task_id: taskId,
+                                task_id: Number(taskId),
                             })
+                        } else {
+                            console.log(`Provider ${providerId} is already blacklisted, not submitting failed task status`)
                         }
                     } finally {
                         console.log(`Finished benchmarking on provider: ${providerId}`)
@@ -220,12 +252,12 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
                 if (failed.reason instanceof GolemError) {
                     if (failed.reason.activity?.agreement.provider) {
                         console.log(`Provider failed: ${failed.reason.activity?.agreement.provider.id}`, failed.reason.message)
-                        await submitTaskStatus({
+                        taskStatuses.push({
                             node_id: failed.reason.activity?.agreement.provider.id,
                             task_name: "Full benchmark suite",
                             is_successful: false,
                             error_message: "Provider failed to deploy the activity",
-                            task_id: taskId,
+                            task_id: Number(taskId),
                         })
                     }
                 } else if (failed.reason instanceof Error && failed.reason.name === "TimeoutError") {
@@ -254,18 +286,34 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
         console.warn(err, "Failed to run the tests due to an error")
     } finally {
         await golem.stop()
+        await submitBulkBenchmark(accumulatedBenchmarkData)
+        await bulkSubmitTaskStatuses(taskStatuses)
+        console.log
 
         console.log("Costs:")
+        let bulkUpdates = []
+
         for (const key of providerRunCost.keys()) {
             const cost = providerRunCost.get(key)
 
             if (typeof cost === "number") {
                 console.log(`> ${key}: ${cost}`)
-
-                await sendTaskCostUpdate(taskId, key, cost)
+                bulkUpdates.push({ taskId, providerId: key, cost })
             } else {
                 console.error(`Cost for provider ${key} is undefined`)
             }
+        }
+
+        if (bulkUpdates.length > 0) {
+            await sendBulkTaskCostUpdates(bulkUpdates).then((result) => {
+                if (result === "success") {
+                    console.log("Bulk task cost updates sent successfully.")
+                } else {
+                    console.error("Error in sending bulk task cost updates.")
+                }
+            })
+        } else {
+            console.log("No updates to send.")
         }
 
         console.log(`Total running cost: ${totalRunCost}`)

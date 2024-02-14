@@ -24,18 +24,31 @@ export YA_NET_BIND_URL=udp://0.0.0.0:11500
 YAGNA_AUTOCONF_APPKEY=reputation /root/.local/bin/yagna service run >/dev/null 2>&1 &
 sleep 5
 
-# Check if /key.json exists and restore wallet
+# Check if "/key.json" exists
 if [ -f "/key.json" ]; then
-    echo "Restoring wallet from /key.json"
-    address=$(jq -r '.address' /key.json)
-    echo "Found wallet with address: 0x${address}"
-    yagna id create --from-keystore /key.json
-    /root/.local/bin/yagna id update --set-default 0x${address}
-    killall yagna
-    sleep 5
-    rm $HOME/.local/share/yagna/accounts.json
+    echo "Checking wallet from /key.json"
+    # Extract address from key.json
+    json_address=$(jq -r '.address' /key.json)
 
-    YA_NET_BIND_URL=udp://0.0.0.0:11500 YAGNA_AUTOCONF_APPKEY=reputation /root/.local/bin/yagna service run >/dev/null 2>&1 &
-    sleep 5
-    echo "Wallet restored"
+    # Get the current yagna id address
+    current_address=$(yagna id show --json | jq -r '.Ok.nodeId')
+
+    # Compare the addresses
+    if [ "0x$json_address" = "$current_address" ]; then
+        echo "Wallet address matches the current yagna id. Skipping restoration."
+    else
+        echo "Restoring wallet from /key.json"
+        echo "Found wallet with address: 0x${json_address}"
+
+        # Proceed with wallet restoration
+        yagna id create --from-keystore /key.json
+        /root/.local/bin/yagna id update --set-default 0x${json_address}
+        killall yagna
+        sleep 5
+        rm $HOME/.local/share/yagna/accounts.json
+
+        YA_NET_BIND_URL=udp://0.0.0.0:11500 YAGNA_AUTOCONF_APPKEY=reputation /root/.local/bin/yagna service run >/dev/null 2>&1 &
+        sleep 5
+        echo "Wallet restored"
+    fi
 fi

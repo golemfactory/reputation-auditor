@@ -23,6 +23,8 @@ class Offer(models.Model):
     task = models.ForeignKey('Task', on_delete=models.CASCADE)  # Link to a Task
     offer = models.JSONField(default=dict)  # JSON object with offer data
     created_at = models.DateTimeField(auto_now_add=True, null=True)
+    accepted = models.BooleanField(default=False)
+    reason = models.CharField(max_length=255, blank=True, null=True)  # Reason for rejection
 
 
 class DiskBenchmark(models.Model):

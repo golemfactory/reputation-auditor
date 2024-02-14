@@ -7,7 +7,7 @@ from celery import Celery
 from .ping import ping_providers
 import subprocess
 import redis
-import json
+import json, os
 from .models import Task, Provider, Offer
 redis_client = redis.Redis(host='redis', port=6379, db=0)  # Update with your Redis configuration
 
@@ -25,9 +25,10 @@ def ping_providers_task(p2p):
 
 @app.task(queue='benchmarker', options={'queue': 'benchmarker', 'routing_key': 'benchmarker'})
 def benchmark_providers_task():
-    testnet_provider_count = Provider.objects.filter(network='mainnet').count()
-    print(f"Found {testnet_provider_count} providers on testnet")
-    command = f"cd /benchmark && yagna payment fund && yagna payment release-allocations && npm run benchmark -- 3000"
+    budget_per_provider = os.environ.get('BUDGET_PER_PROVIDER', 0.1)
+    mainnet_provider_count = Provider.objects.filter(network='mainnet').count()
+    print(f"Found {mainnet_provider_count} online providers on the mainnet")
+    command = f"cd /benchmark && yagna payment release-allocations && npm run benchmark -- {mainnet_provider_count} {budget_per_provider}"
     with subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) as proc:
         while True:
             output = proc.stdout.readline()
@@ -46,13 +47,21 @@ def process_offers_from_redis():
     offers_to_create = []
 
     for key in offer_keys:
+        # Load the extended offer data, which now includes reason and accepted
         offer_data = json.loads(redis_client.get(key))
         _, task_id, node_id = key.decode('utf-8').split(':')
-        
+
         try:
             task = Task.objects.get(id=task_id)
             provider = Provider.objects.get(node_id=node_id)
-            offers_to_create.append(Offer(task=task, provider=provider, offer=offer_data))
+            offer_instance = Offer(
+                task=task,
+                provider=provider,
+                offer=offer_data.get('offer', {}),
+                reason=offer_data.get('reason', ''),
+                accepted=offer_data.get('accepted', False)
+            )
+            offers_to_create.append(offer_instance)
 
             # Optionally, delete the key from Redis after processing
             redis_client.delete(key)

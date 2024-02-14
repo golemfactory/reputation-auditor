@@ -1,58 +1,105 @@
 const URL = process.env.DOCKER === "true" ? "django:8002" : "api.localhost"
+import { TaskCompletion, ProviderData, Benchmark } from "./types"
 
-export async function submitTaskStatus(data: any): Promise<string | undefined> {
+export async function bulkSubmitTaskStatuses(taskStatuses: TaskCompletion[]) {
+    if (!taskStatuses.length) return
     try {
-        const endpoint = `http://${URL}/v1/submit/task/status`
+        const endpoint = `http://${URL}/v1/submit/task/status/bulk`
 
         const response = await fetch(endpoint, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                // Include other headers as required, like authentication tokens
             },
-            body: JSON.stringify(data),
+            body: JSON.stringify(taskStatuses), // Modified to send the array directly
         })
 
-        if (response.ok) {
-            return "Task failure submitted successfully!"
-        } else {
-            const errorBody = await response.json()
-            throw errorBody
+        // Handle response as needed
+        if (!response.ok) {
+            throw new Error("Failed to submit task statuses")
         }
+        const responseBody = await response.json()
+        console.log(responseBody) // Log success message or handle further as required
     } catch (error) {
-        console.error("Error:", error)
+        console.error("Error in bulkSubmitTaskStatuses:", error)
     }
 }
 
-export async function submitBenchmark(benchmarkData: string, type: string): Promise<string | undefined> {
+export async function fetchProvidersData(): Promise<ProviderData[]> {
     try {
-        const endpoint = `http://${URL}/v1/benchmark/${type}`
+        const response = await fetch("https://api.stats.golem.network/v2/network/online")
+        if (!response.ok) {
+            throw new Error(`Error fetching providers data: ${response.statusText}`)
+        }
+        const data = await response.json()
 
+        // Perform a basic type check, assuming the data should be an array
+        // NOTE: This is a very simplistic type check. You might need a more detailed validation depending on your data structure.
+        if (!Array.isArray(data) || !data.every((provider) => typeof provider === "object" && provider.node_id && provider.runtimes)) {
+            throw new Error("Invalid data structure received from providers data")
+        }
+
+        // Cast the data to ProviderData[] now that we've performed a check
+        return data as ProviderData[]
+    } catch (error) {
+        console.error(error)
+        process.exit(1)
+    }
+}
+
+export async function submitBulkBenchmark(benchmarks: Benchmark[]): Promise<string | undefined> {
+    try {
+        // Updated endpoint to handle bulk benchmark submissions
+        const endpoint = `http://${URL}/v1/benchmark/bulk`
         const response = await fetch(endpoint, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                // Include other headers as required, like authentication tokens
+                // Include other necessary headers, such as authentication tokens
             },
-            body: benchmarkData,
+            // The body now includes a 'benchmarks' field containing an array of benchmark entries
+            body: JSON.stringify({ benchmarks }),
         })
 
         if (response.ok) {
-            return "Benchmark submitted successfully!"
+            return "Bulk benchmark submission successful!"
         } else {
-            console.log(`Error in benchmark submission: ${benchmarkData}`)
-            console.log(benchmarkData)
-            const errorBody = await response.json()
-            throw errorBody
+            console.log("Error in bulk benchmark submission", benchmarks)
+            const errorResponse = await response.json()
+            console.error("Response Error:", errorResponse)
+            throw new Error("Bulk benchmark submission failed")
         }
     } catch (error) {
         console.error("Error:", error)
+        throw error // Re-throw the error to handle it or log it in the calling function
     }
 }
 
 export async function getBlacklistedProviders(): Promise<string[] | undefined> {
     try {
         const endpoint = `http://${URL}/v1/blacklisted-providers`
+
+        const response = await fetch(endpoint, {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+            },
+        })
+
+        if (response.ok) {
+            const data = (await response.json()) as string[]
+            return data
+        } else {
+            process.exit(1)
+        }
+    } catch (error) {
+        console.error("Error:", error)
+        process.exit(1)
+    }
+}
+export async function getBlacklistedOperators(): Promise<string[] | undefined> {
+    try {
+        const endpoint = `http://${URL}/v1/blacklisted-operators`
 
         const response = await fetch(endpoint, {
             method: "GET",
@@ -125,13 +172,21 @@ export async function sendStopTaskSignal(taskId: string, cost: number): Promise<
     }
 }
 
-export async function sendOfferFromProvider(offer: {}, nodeId: string, taskId: string): Promise<string | undefined> {
+export async function sendOfferFromProvider(
+    offer: {},
+    nodeId: string,
+    taskId: string,
+    accepted: boolean,
+    reason: string
+): Promise<string | undefined> {
     try {
         const endpoint = `http://${URL}/v1/task/offer/${taskId}`
         const data = JSON.stringify({
             node_id: nodeId,
             offer,
             task_id: taskId,
+            accepted: accepted,
+            reason: reason,
         })
         const response = await fetch(endpoint, {
             method: "POST",
@@ -154,14 +209,19 @@ export async function sendOfferFromProvider(offer: {}, nodeId: string, taskId: s
     }
 }
 
-
-export async function sendTaskCostUpdate(taskId: string, providerId: string, cost: number): Promise<string | undefined> {
+export async function sendBulkTaskCostUpdates(
+    updates: Array<{ taskId: string; providerId: string; cost: number }>
+): Promise<string | undefined> {
     try {
-        const endpoint = `http://${URL}/v1/task/update-cost/${Number(taskId)}`;
+        const endpoint = `http://${URL}/v1/tasks/update-costs`
         const data = JSON.stringify({
-            provider_id: providerId,
-            cost: Number(cost),
-        });
+            updates: updates.map((update) => ({
+                task_id: Number(update.taskId),
+                provider_id: update.providerId,
+                cost: Number(update.cost),
+            })),
+        })
+
         const response = await fetch(endpoint, {
             method: "POST",
             headers: {
@@ -169,17 +229,17 @@ export async function sendTaskCostUpdate(taskId: string, providerId: string, cos
                 // Include other headers as required, such as authentication tokens.
             },
             body: data,
-        });
+        })
 
         if (response.ok) {
-            return "success";
+            return "success"
         } else {
-            console.error(`Error in sending task cost update: ${data}`);
-            const errorBody = await response.json() as { error: string };
-            console.error(errorBody);
+            console.error(`Error in sending bulk task cost updates: ${data}`)
+            const errorBody = (await response.json()) as { error: string }
+            console.error(errorBody)
         }
     } catch (error) {
-        console.error("Error:", error);
-        return undefined;
+        console.error("Error:", error)
+        return undefined
     }
 }

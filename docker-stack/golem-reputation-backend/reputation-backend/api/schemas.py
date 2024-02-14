@@ -1,5 +1,5 @@
 from ninja import Schema
-from typing import Optional
+from typing import Optional, List
 
 from datetime import datetime
 
@@ -77,9 +77,20 @@ class TaskCompletionSchema(Schema):
 class TaskCostUpdateSchema(Schema):
     provider_id: str
     cost: float
+    task_id: int
 
 class TaskCreateSchema(Schema):
     name: str
 
 class TaskUpdateSchema(Schema):
     finished_at: Optional[datetime] = None
+
+class BulkTaskCostUpdateSchema(Schema):
+    updates: List[TaskCostUpdateSchema]
+
+class BenchmarkDataSchema(Schema):
+    type: str  # 'disk', 'cpu', or 'memory'
+    data: dict  # Will contain data corresponding to the specific benchmark type
+
+class BulkBenchmarkSchema(Schema):
+    benchmarks: List[BenchmarkDataSchema]

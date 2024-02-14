@@ -1,6 +1,6 @@
 from ninja import NinjaAPI, Path
 from .models import DiskBenchmark, CpuBenchmark, MemoryBenchmark, Provider, TaskCompletion, PingResult, NodeStatus, Task, Offer
-from .schemas import DiskBenchmarkSchema, CpuBenchmarkSchema, MemoryBenchmarkSchema, TaskCompletionSchema, ProviderSuccessRate, TaskCreateSchema, TaskUpdateSchema, ProposalSchema, TaskCostUpdateSchema
+from .schemas import DiskBenchmarkSchema, CpuBenchmarkSchema, MemoryBenchmarkSchema, TaskCompletionSchema, ProviderSuccessRate, TaskCreateSchema, TaskUpdateSchema, ProposalSchema, TaskCostUpdateSchema, BulkTaskCostUpdateSchema, BulkBenchmarkSchema
 from django.shortcuts import get_object_or_404
 from django.http import JsonResponse
 from typing import Any, Dict, List
@@ -8,11 +8,31 @@ import json
 from collections import defaultdict
 from django.db.models import Avg, Count, Q
 from .tasks import benchmark_providers_task
-
+from .bulkutils import process_disk_benchmark, process_cpu_benchmark, process_memory_benchmark
 api = NinjaAPI()
 import redis
 
 
+
+@api.post("/benchmark/bulk")
+def create_bulk_benchmark(request, bulk_data: BulkBenchmarkSchema):
+
+    # Organize data by benchmark type
+    organized_data = {"disk": [], "cpu": [], "memory": []}
+
+    for benchmark in bulk_data.benchmarks:
+        organized_data[benchmark.type].append(benchmark.data)
+    
+    # Process each benchmark type
+    disk_response = process_disk_benchmark(organized_data["disk"])
+    cpu_response = process_cpu_benchmark(organized_data["cpu"])
+    memory_response = process_memory_benchmark(organized_data["memory"])
+
+    return {
+        "disk_benchmarks": disk_response,
+        "cpu_benchmarks": cpu_response,
+        "memory_benchmarks": memory_response
+    }
 
 
 ## We need to convert some of the incoming data to the correct type due to the fact that when we cat the results in the task script, they are all strings
@@ -20,7 +40,7 @@ import redis
 @api.post("/benchmark/disk")
 def create_disk_benchmark(request, data: DiskBenchmarkSchema):
     try:
-        provider = get_object_or_404(Provider, node_id=data.node_id)
+        provider, created = Provider.objects.get_or_create(node_id=data.node_id)
         benchmark = DiskBenchmark.objects.create(
             provider_id=provider.node_id,
             benchmark_name=data.benchmark_name,
@@ -36,16 +56,16 @@ def create_disk_benchmark(request, data: DiskBenchmarkSchema):
             max_latency_ms=float(data.max_latency_ms),
             latency_95th_percentile_ms=float(data.latency_95th_percentile_ms)
         )
-        return {"status": "success", "message": "Benchmark data saved successfully", "id": benchmark.id}
+        return {"status": "success", "message": "Disk Benchmark data saved successfully", "id": benchmark.id}
     except Exception as e:
         print(e)
-        return {"status": "error", "message": "Error saving memory benchmark data",}
+        return {"status": "error", "message": "Error saving Disk benchmark data",}
 
 @api.post("/benchmark/cpu")
 def create_cpu_benchmark(request, data: CpuBenchmarkSchema):
         
     try:
-        provider = get_object_or_404(Provider, node_id=data.node_id)
+        provider, created = Provider.objects.get_or_create(node_id=data.node_id)
         # Creates a new CpuBenchmark object and saves it
         benchmark = CpuBenchmark.objects.create(
             provider_id=provider.node_id,
@@ -63,15 +83,16 @@ def create_cpu_benchmark(request, data: CpuBenchmarkSchema):
         return {"status": "success", "message": "CPU Benchmark data saved successfully", "id": benchmark.id}
     except Exception as e:
         print(e)
-        return {"status": "error", "message": "Error saving memory benchmark data",}
+        return {"status": "error", "message": "Error saving CPU benchmark data",}
 
 @api.post("/benchmark/memory")
 def create_memory_benchmark(request, data: MemoryBenchmarkSchema):
     try:
-        provider = get_object_or_404(Provider, node_id=data.node_id)
+        # Use get_or_create with only the node_id, as no other default data is available
+        provider, created = Provider.objects.get_or_create(node_id=data.node_id)
 
         benchmark = MemoryBenchmark.objects.create(
-            provider_id=provider.node_id,
+            provider=provider,
             benchmark_name=data.benchmark_name,
             total_operations=int(data.total_operations),
             operations_per_second=float(data.operations_per_second),
@@ -87,30 +108,43 @@ def create_memory_benchmark(request, data: MemoryBenchmarkSchema):
             events=float(data.events),
             execution_time_sec=float(data.execution_time_sec)
         )
-        return {"status": "success", "message": "Memory Benchmark data saved successfully",}
+        return {"status": "success", "message": "Memory Benchmark data saved successfully"}
     except Exception as e:
         print(e)
-        return {"status": "error", "message": "Error saving memory benchmark data",}
+        return {"status": "error", "message": "Error saving memory benchmark data"}
+
     
 
-@api.post("/submit/task/status")
-def create_task_completion(request, data: TaskCompletionSchema):
-    try:
-        provider = get_object_or_404(Provider, node_id=data.node_id)
-        benchmark = TaskCompletion.objects.create(
-            provider_id=provider.node_id,
-            task_name=data.task_name,
-            is_successful=data.is_successful,
-            error_message=data.error_message,
-            task=Task.objects.get(id=data.task_id)
-            
-        )
-        return {"status": "success", "message": "Task completion data saved successfully",}
-    except Exception as e:
-        print(e)
-        return {"status": "error", "message": "Error saving task completion data",}
-    
+@api.post("/submit/task/status/bulk")
+def create_bulk_task_completion(request, data: List[TaskCompletionSchema]):
+    task_completion_data = []
+    errors = []
 
+    for item in data:
+        try:
+            provider = Provider.objects.filter(node_id=item.node_id).first()
+            task = Task.objects.filter(id=item.task_id).first()
+
+            if not provider or not task:
+                errors.append(f"Provider or Task not found for item with node_id {item.node_id} and task_id {item.task_id}")
+                continue
+
+            task_completion_data.append(TaskCompletion(
+                provider=provider,
+                task=task,
+                task_name=item.task_name,
+                is_successful=item.is_successful,
+                error_message=item.error_message,
+            ))
+        except Exception as e:
+            errors.append(f"Error processing item with node_id {item.node_id}: {str(e)}")
+
+    TaskCompletion.objects.bulk_create(task_completion_data)
+
+    if errors:
+        return {"status": "error", "message": "Errors occurred during processing", "errors": errors}
+    else:
+        return {"status": "success", "message": f"Bulk task completion data saved successfully, processed {len(task_completion_data)} items."}
 
 
 
@@ -228,7 +262,43 @@ def get_provider_scores(request, node_id: str):
 from django.utils import timezone
 from django.utils import timezone
 from datetime import timedelta
-from django.db.models import Subquery, OuterRef
+from django.db.models import Count, Avg, StdDev, FloatField, Q, Subquery, OuterRef, F
+from django.db.models.functions import Cast
+
+@api.get("/blacklisted-operators", response=List[str])
+def blacklisted_operators(request):
+    now = timezone.now()
+    recent_tasks = TaskCompletion.objects.filter(
+        timestamp__gte=now - timedelta(days=3)  # Adjust the days according to your requirement
+    ).values('provider__payment_addresses__golem.com.payment.platform.erc20-mainnet-glm.address').annotate(
+        successful_tasks=Count('pk', filter=Q(is_successful=True)),
+        total_tasks=Count('pk'),
+        success_ratio=Cast('successful_tasks', FloatField()) / Cast('total_tasks', FloatField())
+    ).exclude(total_tasks=0)
+
+    success_stats = recent_tasks.aggregate(
+        average_success_ratio=Avg('success_ratio'),
+        stddev_success_ratio=StdDev('success_ratio')
+    )
+
+    avg_success_ratio = success_stats['average_success_ratio']
+    stddev_success_ratio = success_stats['stddev_success_ratio']
+
+    operators_with_z_scores = recent_tasks.annotate(
+        z_score=(F('success_ratio') - avg_success_ratio) / stddev_success_ratio
+    )
+    for operator in operators_with_z_scores:
+        print(operator)
+    
+    z_score_threshold = -1
+    blacklisted_operators = operators_with_z_scores.filter(
+        z_score__lte=z_score_threshold,
+        total_tasks__gte=5
+    ).values_list(
+        'provider__payment_addresses__golem.com.payment.platform.erc20-mainnet-glm.address', flat=True
+    ).distinct()
+
+    return list(blacklisted_operators)
 
 @api.get("/blacklisted-providers", response=List[str])
 def blacklisted_providers(request):
@@ -286,29 +356,45 @@ def end_task(request, task_id: int, cost: float):
 
 from django.shortcuts import get_object_or_404
 
-@api.post("/task/update-cost/{task_id}")
-def update_task_cost(request, task_id: int, payload: TaskCostUpdateSchema):
+from .schemas import BulkTaskCostUpdateSchema
+
+@api.post("/tasks/update-costs")
+def bulk_update_task_costs(request, payload: BulkTaskCostUpdateSchema):
     try:
-        # Directly fetch the TaskCompletion instance with related Task and Provider
-        task_completion = get_object_or_404(
-            TaskCompletion.objects.select_related('provider', 'task'),
-            provider__node_id=payload.provider_id,  # Assuming node_id is the field in Provider model
-            task_id=task_id
-        )
+        task_completions_to_update = []
 
-        # Update the cost
-        task_completion.cost = payload.cost
-        task_completion.save()
+        for update in payload.updates:
+            task_exists = Task.objects.filter(id=update.task_id).exists()
+            if not task_exists:
+                print(f"Task with ID {update.task_id} not found.")
+                continue  # Skip this update
 
-        return JsonResponse({"status": "success", "message": "Task cost updated successfully"})
+            provider_exists = Provider.objects.filter(node_id=update.provider_id).exists()
+            if not provider_exists:
+                print(f"Provider with node ID {update.provider_id} not found.")
+                continue  # Skip this update
 
-    except Task.DoesNotExist:
-        return JsonResponse({"status": "error", "message": "Task not found"}, status=404)
-    except Provider.DoesNotExist:
-        return JsonResponse({"status": "error", "message": "Provider not found"}, status=404)
+            try:
+                task_completion = TaskCompletion.objects.select_related('provider', 'task').get(
+                    provider__node_id=update.provider_id, task__id=update.task_id)
+                
+                # Update the cost
+                task_completion.cost = update.cost
+                task_completions_to_update.append(task_completion)
+            
+            except TaskCompletion.DoesNotExist as e:
+                print(e)
+                print(f"TaskCompletion not found for task ID {update.task_id} and provider ID {update.provider_id}.")
+                continue  # Skip this update
+
+        # Bulk update
+        if task_completions_to_update:
+            TaskCompletion.objects.bulk_update(task_completions_to_update, ['cost'])
+
+        return JsonResponse({"status": "success", "message": "Bulk task cost update completed"})
+
     except Exception as e:
-        # Log the exception for debugging
-        print(e)
+        print(f"An error occurred: {str(e)}")
         return JsonResponse({"status": "error", "message": "An error occurred"}, status=500)
 
 
@@ -322,17 +408,26 @@ def store_offer(request, task_id: int):
         json_data = json.loads(request.body)
         node_id = json_data.get('node_id')
         offer = json_data.get('offer')
+        reason = json_data.get('reason', '')  # Default to an empty string if reason is not provided
+        accepted = json_data.get('accepted', False)  # Default to False if accepted is not provided
 
         if not node_id or offer is None:
             return JsonResponse({"status": "error", "error": "Missing node_id or offer"}, status=400)
 
+        # Include reason and accepted in the offer dictionary
+        offer_extended = {
+            'offer': offer,
+            'reason': reason,
+            'accepted': accepted
+        }
+
         # Create a unique key for Redis, e.g., using task ID and node ID
         redis_key = f"offer:{task_id}:{node_id}"
-        redis_client.set(redis_key, json.dumps(offer))
+        redis_client.set(redis_key, json.dumps(offer_extended))  # Store the extended offer data
     except Exception as e:
         return JsonResponse({"status": "error", "error": str(e)}, status=500)
 
-    return JsonResponse({"status": "success", "error": "Offer stored in Redis"})
+    return JsonResponse({"status": "success", "message": "Offer stored in Redis"})
 
 
 @api.get("/benchmark")

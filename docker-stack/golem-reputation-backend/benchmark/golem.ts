@@ -14,7 +14,7 @@ import {
     Yagna,
 } from "@golem-sdk/golem-js"
 import { sendOfferFromProvider, sendStartTaskSignal } from "./utils"
-
+import { ProviderData } from "./types"
 // TODO: All the things dragged from `dist` should be exported from the main definition file
 import { YagnaApi } from "@golem-sdk/golem-js/dist/utils"
 import { Proposal } from "@golem-sdk/golem-js/dist/market"
@@ -62,6 +62,7 @@ export interface GolemConfig {
         withoutOperators?: string[]
 
         withoutProviders?: string[]
+        statsData?: ProviderData[]
     }
     taskId: string
     computedAlready: string[]
@@ -181,7 +182,7 @@ export class Golem {
         })
 
         this.marketService = new MarketService(this.agreementService, this.api, {
-            expirationSec: 60 * 10,
+            expirationSec: 60 * 60,
             logger: createLogger("golem-js:market"),
             proposalFilter: this.buildProposalFilter(),
             eventTarget: config.eventTarget,
@@ -207,7 +208,8 @@ export class Golem {
     async start() {
         const allocation = await this.paymentService.createAllocation({
             // Hardcoded for now
-            budget: this.getBudgetEstimate(),
+            // budget: this.getBudgetEstimate(),
+            budget: 20,
             expires: this.getExpectedDurationSeconds() * 1000,
         })
 
@@ -287,12 +289,11 @@ export class Golem {
 
                     this.paymentService.acceptPayments(agreement)
 
-                    const MIN_ACTIVITY_DURATION = 5 * 60
+                    const MIN_ACTIVITY_DURATION = 20 * 60
                     // FIXME #sdk Use Agreement and not string
 
                     const activity = await Activity.create(agreement, this.api, {
-                        // activityExecuteTimeout: (this.config.requestTimeoutSec ?? MIN_ACTIVITY_DURATION) * 1000,
-                        activityExecuteTimeout: MIN_ACTIVITY_DURATION * 1000,
+                        activityExecuteTimeout: (this.config.requestTimeoutSec ?? MIN_ACTIVITY_DURATION) * 1000,
                         activityExeBatchResultPollIntervalSeconds: 20,
                     })
 
@@ -362,35 +363,35 @@ export class Golem {
             return 9999999999
         }
 
-        return proposal.pricing.start + proposal.pricing.cpuSec * threadsNo * budgetSeconds + proposal.pricing.envSec * budgetSeconds
+        // return proposal.pricing.start + proposal.pricing.cpuSec * threadsNo * budgetSeconds + proposal.pricing.envSec * budgetSeconds
+        return proposal.pricing.cpuSec * 2 * budgetSeconds + proposal.pricing.envSec * budgetSeconds
     }
 
     private buildProposalFilter(): ProposalFilter {
-        return (proposal) => {
+        return async (proposal) => {
+            let accepted = true
+            let reason = ""
+
             if (this.isFromDisallowedOperator(proposal)) {
-                // this.logger(
-                //   "Discarding proposal because it's from an disallowed operator",
-                // );
-                return false
+                console.log("Discarding proposal because it's from a disallowed operator")
+                accepted = false
+                reason = "from a disallowed operator"
+            } else if (this.isFromDisallowedProvider(proposal)) {
+                accepted = false
+                reason = "from a disallowed provider"
+            } else if (this.isOverpricedProvider(proposal.provider.id)) {
+                console.log("Discarding proposal because it's from an overpriced provider")
+                accepted = false
+                reason = "from an overpriced provider"
             }
 
-            if (this.isFromDisallowedProvider(proposal)) {
-                // this.logger(
-                //   "Discarding proposal because it's from an disallowed provider",
-                // );
-                return false
-            }
+            // Send offer with the decision and reason
+            await sendOfferFromProvider(proposal.properties, proposal.provider.id, this.config.taskId, accepted, reason)
 
-            if (!this.isWithinBudget(proposal)) {
-                // this.logger(
-                //   "Discarding proposal because it's estimated cost is above our budget per replica",
-                // );
-                return false
-            }
-
-            return true
+            return accepted
         }
     }
+
     private isWithinBudget(proposal: Proposal) {
         const { maxReplicas } = this.config.deploy
 
@@ -414,5 +415,48 @@ export class Golem {
 
     private isFromDisallowedProvider(proposal: Proposal) {
         return Boolean(this.config.market.withoutProviders?.includes(proposal.provider.id))
+    }
+    private isOverpricedProvider(providerId: string): boolean {
+        const providerData = this.config.market.statsData?.find((provider: ProviderData) => provider.node_id === providerId)
+
+        if (!providerData || !providerData.runtimes?.vm) {
+            console.log(
+                `Provider data or VM runtime information is missing for ${providerId}. Assuming provider is not verifiable, hence considering it overpriced.`
+            )
+            return true // Treat as overpriced if critical data is missing, aligning with cautious approach
+        }
+
+        const { is_overpriced, times_more_expensive, times_cheaper } = providerData.runtimes.vm
+
+        // If times_more_expensive is null, check the conditions related to times_cheaper
+        if (times_more_expensive === null) {
+            if (times_cheaper !== null && times_cheaper > 0) {
+                // Provider is cheaper than an average AWS instance, hence not overpriced
+                console.log(`Provider ${providerId} is cheaper than the average AWS instance. Not considered overpriced.`)
+                return false
+            } else {
+                // Lack of comparison data suggests uncertainty, consider as overpriced to be cautious
+                console.log(
+                    `No comparative pricing data available for provider ${providerId}, assuming overpriced due to lack of transparency.`
+                )
+                return true
+            }
+        }
+
+        // If it's known to be overpriced but within a 20% margin, consider it acceptable/not overpriced
+        if (is_overpriced && times_more_expensive <= 1.2) {
+            console.log(`Provider ${providerId} is slightly overpriced but within acceptable range. Not considered overpriced.`)
+            return false
+        }
+
+        // Explicitly overpriced beyond the acceptable margin
+        if (is_overpriced && times_more_expensive > 1.2) {
+            console.log(`Provider ${providerId} is overpriced beyond acceptable range. Considered overpriced.`)
+            return true
+        }
+
+        // If the provider is not flagged as overpriced or within acceptable margin, it's not considered overpriced
+        console.log(`Provider ${providerId} does not meet the criteria for being deemed overpriced.`)
+        return false
     }
 }
