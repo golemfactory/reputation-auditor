@@ -10,6 +10,7 @@ import {
     submitBulkBenchmark,
 } from "./utils"
 import { TaskCompletion, Benchmark } from "./types"
+import { readFile } from "node:fs/promises";
 let blacklistedProviders: string[] = []
 let blacklistedOperators: string[] = []
 let failedProvidersIds: string[] = []
@@ -131,11 +132,16 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
 
     const REQUEST_START_TIMEOUT_SEC = 90
 
+    const manifest = await readFile("manifest.json");
+    console.log(manifest.toString('base64').length);
+
     const golem = new Golem({
         initTimeoutSec: 90,
         requestStartTimeoutSec: REQUEST_START_TIMEOUT_SEC,
         requestTimeoutSec: EXPECTED_EXECUTION_TIME_SECONDS,
         deploy: {
+            imageHash: "c317251c8e48a74e73f2bf0b74937a2d7e33e0a06ed04e043ab9e2ab",
+            // manifest: manifest.toString('base64'),
             maxReplicas: numOfChecks,
             resources: { minCpu: 1, minMemGib: 0.5, minStorageGib: 12 },
             downscaleIntervalSec: 90,
@@ -165,7 +171,7 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
         for (let i = 0; i < numOfChecks; i++) {
             console.log(`Scheduling task #${i}`)
             tasks.push(
-                golem.sendTask<GolemTaskResult | undefined>(async (ctx: any) => {
+                golem.sendTask<GolemTaskResult | undefined>(async (ctx: any)  => {
                     const providerId = ctx.provider!.id
                     console.log(`Task #${i} started on provider `, providerId)
                     try {

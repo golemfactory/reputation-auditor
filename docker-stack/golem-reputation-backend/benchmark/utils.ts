@@ -1,5 +1,5 @@
-const URL = process.env.DOCKER === "true" ? "django:8002" : "api.localhost"
 import { TaskCompletion, ProviderData, Benchmark } from "./types"
+const URL = process.env.API_HOST ?? process.env.DOCKER === "true" ? "django:8002" : "api.localhost"
 
 export async function bulkSubmitTaskStatuses(taskStatuses: TaskCompletion[]) {
     if (!taskStatuses.length) return
@@ -75,7 +75,7 @@ export async function submitBulkBenchmark(benchmarks: Benchmark[]): Promise<stri
     }
 }
 
-export async function getBlacklistedProviders(): Promise<string[] | undefined> {
+export async function getBlacklistedProviders(): Promise<string[]> {
     try {
         const endpoint = `http://${URL}/v1/blacklisted-providers`
 
@@ -112,10 +112,12 @@ export async function getBlacklistedOperators(): Promise<string[] | undefined> {
             const data = (await response.json()) as string[]
             return data
         } else {
+            console.error(`Failed to initialize blacklisted providers, reponse not OK: ${response.status} ${response.statusText}`);
+            console.error(await response.text());
             process.exit(1)
         }
     } catch (error) {
-        console.error("Error:", error)
+        console.error("Failed to initialize blacklisted providers:", error)
         process.exit(1)
     }
 }
@@ -124,7 +126,7 @@ export async function sendStartTaskSignal(): Promise<string | undefined> {
     try {
         const endpoint = `http://${URL}/v1/task/start`
         const jsonData = JSON.stringify({
-            name: "benchmark suite",
+            name: "spinup suite",
         })
 
         const response = await fetch(endpoint, {
@@ -141,7 +143,7 @@ export async function sendStartTaskSignal(): Promise<string | undefined> {
             return data.id
         } else {
             console.log(`Error in task start: ${jsonData}`)
-            const errorBody = await response.json()
+            const errorBody = await response.text()
             throw errorBody
         }
     } catch (error) {

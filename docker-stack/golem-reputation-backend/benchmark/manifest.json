@@ -1,0 +1,22 @@
+{
+  "version": "0.1.0",
+  "createdAt": "2024-02-15T10:09:25.056+01:00",
+  "expiresAt": "2024-05-15T10:09:25.056+02:00",
+  "metadata": {
+    "name": "golem-benchmark",
+    "description": "Golem benchmarking suite",
+    "version": "1.0.0"
+  },
+  "payload": [
+    {
+      "platform": {
+        "os": "linux",
+        "arch": "x86_64"
+      },
+      "hash": "sha3:c317251c8e48a74e73f2bf0b74937a2d7e33e0a06ed04e043ab9e2ab",
+      "urls": [
+        "http://registry.golem.network/v1/image/download?hash=c317251c8e48a74e73f2bf0b74937a2d7e33e0a06ed04e043ab9e2ab"
+      ]
+    }
+  ]
+}
