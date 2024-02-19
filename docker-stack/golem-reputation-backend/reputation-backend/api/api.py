@@ -30,7 +30,7 @@ def list_provider_scores(request):
             success_ratio = provider.success_count / provider.total_count
             scores = {}
             # scores = get_provider_benchmark_scores(provider, recent_n=3)
-            scores.update({"successRatio": success_ratio})
+            scores.update({"successRate": success_ratio})
             uptime = provider.nodestatus_set.first().uptime_percentage if provider.nodestatus_set.exists() else 0
             normalized_uptime = uptime / 100  # Normalize uptime to 0-1
             scores.update({"uptime": normalized_uptime})
