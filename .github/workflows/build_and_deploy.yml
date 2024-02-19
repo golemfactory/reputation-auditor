@@ -29,12 +29,12 @@ jobs:
               working-directory: ${{ github.workspace }}/docker-stack/golem-reputation-backend
               run: make push-amd64
 
-            - name: Deploy to europe reputation instance
+            - name: Deploy to Asia reputation instance
               uses: appleboy/ssh-action@master
               with:
-                  host: ${{ secrets.EU_HOST }}
+                  host: ${{ secrets.ASIA_HOST }}
                   username: ${{ secrets.USERNAME }}
-                  key: ${{ secrets.EU_KEY }}
+                  key: ${{ secrets.ASIA_KEY }}
                   port: ${{ secrets.PORT }}
                   script: |
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend:${{ github.sha }} reputation_django
@@ -46,12 +46,12 @@ jobs:
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_benchmarker_worker
                       docker image prune -f
 
-            - name: Deploy to Asia reputation instance
+            - name: Deploy to europe reputation instance
               uses: appleboy/ssh-action@master
               with:
-                  host: ${{ secrets.ASIA_HOST }}
+                  host: ${{ secrets.EU_HOST }}
                   username: ${{ secrets.USERNAME }}
-                  key: ${{ secrets.ASIA_KEY }}
+                  key: ${{ secrets.EU_KEY }}
                   port: ${{ secrets.PORT }}
                   script: |
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend:${{ github.sha }} reputation_django
