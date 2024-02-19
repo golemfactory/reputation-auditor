@@ -22,15 +22,18 @@ def list_provider_scores(request):
     providers = Provider.objects.annotate(
         success_count=Count('taskcompletion', filter=Q(taskcompletion__is_successful=True, taskcompletion__timestamp__gte=ten_days_ago)),
         total_count=Count('taskcompletion', filter=Q(taskcompletion__timestamp__gte=ten_days_ago)),
-    ).all()
+    ).prefetch_related('nodestatus_set').all()
 
     response = {"providers": [], "rejected": []}
     for provider in providers:
         if provider.total_count > 0:
             success_ratio = provider.success_count / provider.total_count
-            # scores = get_provider_benchmark_scores(provider, recent_n=3)
             scores = {}
-            scores.update({"successRate": success_ratio})
+            # scores = get_provider_benchmark_scores(provider, recent_n=3)
+            scores.update({"successRatio": success_ratio})
+            uptime = provider.nodestatus_set.first().uptime_percentage if provider.nodestatus_set.exists() else 0
+            normalized_uptime = uptime / 100  # Normalize uptime to 0-1
+            scores.update({"uptime": normalized_uptime})
             response["providers"].append({
                 "providerId": provider.node_id,
                 "scores": scores
