@@ -44,6 +44,7 @@ jobs:
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_ping_worker
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_ping_worker_p2p
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_benchmarker_worker
+                      docker image prune -f
 
             - name: Deploy to Asia reputation instance
               uses: appleboy/ssh-action@master
@@ -60,6 +61,7 @@ jobs:
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_ping_worker
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_ping_worker_p2p
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_benchmarker_worker
+                      docker image prune -f
 
             - name: Deploy to US reputation instance
               uses: appleboy/ssh-action@master
@@ -76,3 +78,4 @@ jobs:
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_ping_worker
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_ping_worker_p2p
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_benchmarker_worker
+                      docker image prune -f
