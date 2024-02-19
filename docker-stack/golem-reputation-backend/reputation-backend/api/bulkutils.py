@@ -1,4 +1,4 @@
-from .models import Provider, DiskBenchmark, CpuBenchmark, MemoryBenchmark
+from .models import Provider, DiskBenchmark, CpuBenchmark, MemoryBenchmark, NetworkBenchmark
 
 def process_disk_benchmark(data_list):
     """
@@ -132,3 +132,20 @@ def process_memory_benchmark(data_list):
     MemoryBenchmark.objects.bulk_create(memory_benchmark_objects)
 
     return {"status": "success", "created_count": len(memory_benchmark_objects)}
+
+
+def process_network_benchmark(network_data):
+    network_benchmarks = []
+    provider_ids = set(data['node_id'] for data in network_data)
+    providers = {provider.node_id: provider for provider in Provider.objects.filter(node_id__in=provider_ids)}
+
+    for data in network_data:
+        provider = providers.get(data['node_id'])
+        if provider:
+            network_benchmarks.append(NetworkBenchmark(
+                provider=provider,
+                mbit_per_second=float(data['speed'])
+            ))
+
+    NetworkBenchmark.objects.bulk_create(network_benchmarks)
+    return len(network_benchmarks)

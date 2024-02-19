@@ -10,7 +10,7 @@ import {
     submitBulkBenchmark,
 } from "./utils"
 import { TaskCompletion, Benchmark } from "./types"
-import { readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises"
 let blacklistedProviders: string[] = []
 let blacklistedOperators: string[] = []
 let failedProvidersIds: string[] = []
@@ -53,6 +53,9 @@ const benchmarkMemoryFiles = [
     "random_read_multi_threaded",
     "latency_test_single_thread",
 ]
+
+const networkSpeedFiles = ["networkspeedresult"]
+
 const benchmarkCpuFiles = ["cpu/cpu_single_thread", "cpu/cpu_multi_thread"]
 const benchmarkDiskFiles = [
     "sysbench/random_read",
@@ -72,6 +75,7 @@ const benchmarkTest = async (ctx: any, node_id: string, testName: string, script
 
     for (const filePath of filePaths) {
         const performanceData = await ctx.run(`cat /golem/work/${filePath}.json`)
+        console.log(`Performance data for ${testName} on node ${node_id}:`, performanceData)
         if (!performanceData.stdout) {
             await logAndSubmitFailure(node_id, `Benchmark ${testName}`, `No performance data for ${filePath}`, taskId)
             return false
@@ -132,16 +136,16 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
 
     const REQUEST_START_TIMEOUT_SEC = 90
 
-    const manifest = await readFile("manifest.json");
-    console.log(manifest.toString('base64').length);
+    const manifest = await readFile("manifest.json")
+    console.log(manifest.toString("base64").length)
 
     const golem = new Golem({
         initTimeoutSec: 90,
         requestStartTimeoutSec: REQUEST_START_TIMEOUT_SEC,
         requestTimeoutSec: EXPECTED_EXECUTION_TIME_SECONDS,
         deploy: {
-            imageHash: "c317251c8e48a74e73f2bf0b74937a2d7e33e0a06ed04e043ab9e2ab",
-            // manifest: manifest.toString('base64'),
+            // imageHash: "c317251c8e48a74e73f2bf0b74937a2d7e33e0a06ed04e043ab9e2ab",
+            manifest: manifest.toString("base64"),
             maxReplicas: numOfChecks,
             resources: { minCpu: 1, minMemGib: 0.5, minStorageGib: 12 },
             downscaleIntervalSec: 90,
@@ -171,7 +175,7 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
         for (let i = 0; i < numOfChecks; i++) {
             console.log(`Scheduling task #${i}`)
             tasks.push(
-                golem.sendTask<GolemTaskResult | undefined>(async (ctx: any)  => {
+                golem.sendTask<GolemTaskResult | undefined>(async (ctx: any) => {
                     const providerId = ctx.provider!.id
                     console.log(`Task #${i} started on provider `, providerId)
                     try {
@@ -179,16 +183,21 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
                         if (!memory) {
                             throw new Error("Benchmark failed")
                         }
-                        // const cpu = await benchmarkTest(ctx, providerId, "cpu", `/benchmark-cpu.sh`, benchmarkCpuFiles, taskId)
-                        // if (!cpu) {
-                        //     throw new Error("Benchmark failed")
-                        // }
+                        const cpu = await benchmarkTest(ctx, providerId, "cpu", `/benchmark-cpu.sh`, benchmarkCpuFiles, taskId)
+                        if (!cpu) {
+                            throw new Error("Benchmark failed on CPU speed test")
+                        }
 
-                        // const disk = await benchmarkTest(ctx, providerId, "disk", `/benchmark-disk.sh`, benchmarkDiskFiles, taskId)
+                        const disk = await benchmarkTest(ctx, providerId, "disk", `/benchmark-disk.sh`, benchmarkDiskFiles, taskId)
 
-                        // if (!disk) {
-                        //     throw new Error("Benchmark failed")
-                        // }
+                        if (!disk) {
+                            throw new Error("Benchmark failed on disk speed test")
+                        }
+                        const networkSpeed = await benchmarkTest(ctx, providerId, "network", `/download.sh 10`, networkSpeedFiles, taskId)
+                        if (!networkSpeed) {
+                            throw new Error("Benchmark failed on network speed test")
+                        }
+
                         if (!failedProvidersIds.includes(providerId)) {
                             taskStatuses.push({
                                 node_id: providerId,

@@ -44,6 +44,7 @@ class DiskBenchmark(models.Model):
     avg_latency_ms = models.FloatField()
     max_latency_ms = models.FloatField()
     latency_95th_percentile_ms = models.FloatField()
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
     
 
 class MemoryBenchmark(models.Model):
@@ -66,6 +67,7 @@ class MemoryBenchmark(models.Model):
 
     events = models.FloatField()
     execution_time_sec = models.FloatField()
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
 
 
 
@@ -83,7 +85,12 @@ class CpuBenchmark(models.Model):
     max_latency_ms = models.FloatField()
     latency_95th_percentile_ms = models.FloatField()
     sum_latency_ms = models.FloatField()
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
 
+class NetworkBenchmark(models.Model):
+    provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  
+    mbit_per_second = models.FloatField()
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
 
 class Task(models.Model):
     name= models.CharField(max_length=255)  # Name of the task

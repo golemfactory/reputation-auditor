@@ -29,13 +29,12 @@ export class GolemError extends Error {
 }
 
 class CustomEvent<T> extends Event {
-    detail: T;
-    constructor(message: string, data: EventInit & { detail: T }) {
-        super(message, data);
-        this.detail = data.detail;
+    detail: T
+    constructor(message: string, data: any & { detail: T }) {
+        super(message, data)
+        this.detail = data.detail
     }
 }
-
 
 export const createLogger = (ns: string): Logger => {
     const log = debug(ns)
@@ -79,10 +78,10 @@ export interface GolemConfig {
      * Represents the deployment configuration for a service on Golem Network
      */
     deploy: {
-        imageTag?: string;
-        imageHash?: string;
+        imageTag?: string
+        imageHash?: string
         // Base64 encoded manifest file contents.
-        manifest?: string;
+        manifest?: string
 
         /** How many instances of that service you want to have at maximum, given the idle ones will be freed to control costs  */
         maxReplicas: number
@@ -228,15 +227,15 @@ export class Golem {
         })
 
         // Bad logic and TS typing workaround.
-        const pkg: any = {};
+        const pkg: any = {}
         if (this.config.deploy.manifest) {
-            pkg.manifest = this.config.market;
+            pkg.manifest = this.config.deploy.manifest
         } else if (this.config.deploy.imageTag) {
-            pkg.imageTag = this.config.deploy.imageTag;
+            pkg.imageTag = this.config.deploy.imageTag
         } else if (this.config.deploy.imageHash) {
-            pkg.imageHash = this.config.deploy.imageHash;
+            pkg.imageHash = this.config.deploy.imageHash
         } else {
-            throw new Error('No image specified. Provide imageTag, imageHash or manifest option.')
+            throw new Error("No image specified. Provide imageTag, imageHash or manifest option.")
         }
 
         // TODO: WORKLOAD!
@@ -269,17 +268,19 @@ export class Golem {
                 // FIXME #sdk The provider info is not taken from the activity, but from the "options" object... `this.provider = options?.provider;` @ WorkContext
                 provider: activity.agreement.provider,
             })
-            const deplyStart = performance.now();
+            const deplyStart = performance.now()
             await ctx.before()
-            const deployEnd = performance.now();
+            const deployEnd = performance.now()
 
-            this.config.eventTarget?.dispatchEvent(new CustomEvent("ContextBefore", {
-                detail: {
-                    beforeTimeMs: deployEnd - deplyStart,
-                    providerId: activity.agreement.provider.id,
-                    activityId: activity.id
-                }
-            }));
+            this.config.eventTarget?.dispatchEvent(
+                new CustomEvent("ContextBefore", {
+                    detail: {
+                        beforeTimeMs: deployEnd - deplyStart,
+                        providerId: activity.agreement.provider.id,
+                        activityId: activity.id,
+                    },
+                })
+            )
 
             const result = await task(ctx)
             //await ctx.after(); // FIXME: It's kind of missing when you're using .before()...
