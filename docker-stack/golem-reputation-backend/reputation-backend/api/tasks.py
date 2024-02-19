@@ -42,7 +42,7 @@ def benchmark_providers_task():
 
     rc = proc.poll()
     return rc
-ea6a4e22077bb39248e889945b009381158dbd77
+
 @app.task
 def process_offers_from_redis():
     # Fetch all Redis keys that match the pattern
