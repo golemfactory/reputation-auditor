@@ -1,5 +1,5 @@
 from ninja import NinjaAPI, Path
-from .models import DiskBenchmark, CpuBenchmark, MemoryBenchmark, Provider, TaskCompletion, PingResult, NodeStatus, Task, Offer
+from .models import DiskBenchmark, CpuBenchmark, MemoryBenchmark, Provider, TaskCompletion, PingResult, NodeStatusHistory, Task, Offer
 from .schemas import DiskBenchmarkSchema, CpuBenchmarkSchema, MemoryBenchmarkSchema, TaskCompletionSchema, ProviderSuccessRate, TaskCreateSchema, TaskUpdateSchema, ProposalSchema, TaskCostUpdateSchema, BulkTaskCostUpdateSchema, BulkBenchmarkSchema
 from django.shortcuts import get_object_or_404
 from django.http import JsonResponse
@@ -11,9 +11,32 @@ from .tasks import benchmark_providers_task
 from .bulkutils import process_disk_benchmark, process_cpu_benchmark, process_memory_benchmark, process_network_benchmark
 api = NinjaAPI()
 import redis
+from datetime import datetime, timedelta
 
 
 from .scoring import get_provider_benchmark_scores
+from django.db.models.functions import Coalesce
+def calculate_uptime(provider_id):
+    provider = Provider.objects.get(node_id=provider_id)
+    statuses = NodeStatusHistory.objects.filter(provider=provider).order_by('timestamp')
+
+    online_duration = timedelta(0)
+    last_online_time = None
+
+    for status in statuses:
+        if status.is_online:
+            last_online_time = status.timestamp
+        elif last_online_time:
+            online_duration += status.timestamp - last_online_time
+            last_online_time = None
+
+    # Check if the node is currently online and add the duration
+    if last_online_time is not None:
+        online_duration += timezone.now() - last_online_time
+
+    total_duration = timezone.now() - provider.created_at
+    uptime_percentage = (online_duration.total_seconds() / total_duration.total_seconds()) * 100
+    return uptime_percentage
 
 
 @api.get("/providers/scores")
@@ -22,28 +45,33 @@ def list_provider_scores(request):
     providers = Provider.objects.annotate(
         success_count=Count('taskcompletion', filter=Q(taskcompletion__is_successful=True, taskcompletion__timestamp__gte=ten_days_ago)),
         total_count=Count('taskcompletion', filter=Q(taskcompletion__timestamp__gte=ten_days_ago)),
-    ).prefetch_related('nodestatus_set').all()
+    ).all()
 
     response = {"providers": [], "rejected": []}
     for provider in providers:
         if provider.total_count > 0:
             success_ratio = provider.success_count / provider.total_count
             scores = {}
-            # scores = get_provider_benchmark_scores(provider, recent_n=3)
-            scores.update({"successRate": success_ratio})
-            uptime = provider.nodestatus_set.first().uptime_percentage if provider.nodestatus_set.exists() else 0
-            normalized_uptime = uptime / 100  # Normalize uptime to 0-1
-            scores.update({"uptime": normalized_uptime})
+            uptime_percentage = calculate_uptime(provider.node_id)
+            
+            scores.update({
+                "successRate": success_ratio,
+                "uptime": uptime_percentage / 100  # Normalize uptime to a 0-1 scale, if desired
+            })
             response["providers"].append({
                 "providerId": provider.node_id,
                 "scores": scores
             })
-        # else:
-        #     response["rejected"].append({
-        #         "providerId": provider.node_id,
-        #         "reason": "No activities within the last 10 days"
-        #     })
-
+    providers_with_no_tasks = Provider.objects.filter(taskcompletion__isnull=True)
+    for provider in providers_with_no_tasks:
+        uptime_percentage = calculate_uptime(provider.node_id)
+        response["rejected"].append({
+            "providerId": provider.node_id,
+            "scores": {
+                "successRate": 0,
+                "uptime": uptime_percentage / 100
+            }
+        })
     return response
 
 
@@ -210,84 +238,84 @@ def provider_success_rate(request):
 
 
 
-@api.get("/provider/{node_id}/scores", response=dict)
-def get_provider_scores(request, node_id: str):
-    try:
-        provider = get_object_or_404(Provider, node_id=node_id)
-        disk_benchmarks = (
-            DiskBenchmark.objects.filter(provider=provider)
-            .values("benchmark_name")
-            .annotate(
-                avg_read_throughput=Avg("read_throughput_mb_ps"),
-                avg_write_throughput=Avg("write_throughput_mb_ps"),
-                latency_95th_percentile=Avg("latency_95th_percentile_ms"),
-            )[:5]
-        )
+# @api.get("/provider/{node_id}/scores", response=dict)
+# def get_provider_scores(request, node_id: str):
+#     try:
+#         provider = get_object_or_404(Provider, node_id=node_id)
+#         disk_benchmarks = (
+#             DiskBenchmark.objects.filter(provider=provider)
+#             .values("benchmark_name")
+#             .annotate(
+#                 avg_read_throughput=Avg("read_throughput_mb_ps"),
+#                 avg_write_throughput=Avg("write_throughput_mb_ps"),
+#                 latency_95th_percentile=Avg("latency_95th_percentile_ms"),
+#             )[:5]
+#         )
 
-        memory_benchmarks = (
-            MemoryBenchmark.objects.filter(provider=provider)
-            .values("benchmark_name")
-            .annotate(
-                avg_total_data_transferred=Avg("total_data_transferred_mi_b"),
-                avg_throughput=Avg("throughput_mi_b_sec"),
-                avg_latency_95th_percentile=Avg("latency_95th_percentile_ms"),
-            )[:5]
-        )
+#         memory_benchmarks = (
+#             MemoryBenchmark.objects.filter(provider=provider)
+#             .values("benchmark_name")
+#             .annotate(
+#                 avg_total_data_transferred=Avg("total_data_transferred_mi_b"),
+#                 avg_throughput=Avg("throughput_mi_b_sec"),
+#                 avg_latency_95th_percentile=Avg("latency_95th_percentile_ms"),
+#             )[:5]
+#         )
 
-        cpu_benchmarks = (
-            CpuBenchmark.objects.filter(provider=provider)
-            .values("benchmark_name")
-            .annotate(
-                avg_events_per_second=Avg("events_per_second"),
-                total_events=Avg("total_events"),
-                threads=Avg("threads"),
-            )[:5]
-        )
+#         cpu_benchmarks = (
+#             CpuBenchmark.objects.filter(provider=provider)
+#             .values("benchmark_name")
+#             .annotate(
+#                 avg_events_per_second=Avg("events_per_second"),
+#                 total_events=Avg("total_events"),
+#                 threads=Avg("threads"),
+#             )[:5]
+#         )
 
-        avg_ping = (
-            PingResult.objects.filter(provider=provider)
-            .aggregate(
-                avg_ping_tcp=Avg("ping_tcp"),
-                avg_ping_udp=Avg("ping_udp")
-            )
-        )
+#         avg_ping = (
+#             PingResult.objects.filter(provider=provider)
+#             .aggregate(
+#                 avg_ping_tcp=Avg("ping_tcp"),
+#                 avg_ping_udp=Avg("ping_udp")
+#             )
+#         )
 
-        uptime_percentage = (
-            NodeStatus.objects.filter(provider=provider)
-            .aggregate(uptime=Avg("uptime_percentage"))
-            .get("uptime", 0)
-        )
-        task_counts = TaskCompletion.objects.filter(provider=provider).aggregate(
-        total=Count('id'),
-        successful=Count('id', filter=Q(is_successful=True)))
+#         uptime_percentage = (
+#             NodeStatus.objects.filter(provider=provider)
+#             .aggregate(uptime=Avg("uptime_percentage"))
+#             .get("uptime", 0)
+#         )
+#         task_counts = TaskCompletion.objects.filter(provider=provider).aggregate(
+#         total=Count('id'),
+#         successful=Count('id', filter=Q(is_successful=True)))
 
-        success_rate = (task_counts['successful'] / task_counts['total'] * 100) if task_counts['total'] > 0 else 0
+#         success_rate = (task_counts['successful'] / task_counts['total'] * 100) if task_counts['total'] > 0 else 0
 
-        disk_scores = [{"benchmark_name": db["benchmark_name"], "avg_read_throughput": db["avg_read_throughput"], 
-                        "avg_write_throughput": db["avg_write_throughput"], "latency_95th_percentile": db["latency_95th_percentile"]} 
-                        for db in disk_benchmarks]
+#         disk_scores = [{"benchmark_name": db["benchmark_name"], "avg_read_throughput": db["avg_read_throughput"], 
+#                         "avg_write_throughput": db["avg_write_throughput"], "latency_95th_percentile": db["latency_95th_percentile"]} 
+#                         for db in disk_benchmarks]
 
-        memory_scores = [{"benchmark_name": mb["benchmark_name"], "avg_total_data_transferred": mb["avg_total_data_transferred"], 
-                        "avg_throughput": mb["avg_throughput"], "avg_latency_95th_percentile": mb["avg_latency_95th_percentile"]} 
-                        for mb in memory_benchmarks]
+#         memory_scores = [{"benchmark_name": mb["benchmark_name"], "avg_total_data_transferred": mb["avg_total_data_transferred"], 
+#                         "avg_throughput": mb["avg_throughput"], "avg_latency_95th_percentile": mb["avg_latency_95th_percentile"]} 
+#                         for mb in memory_benchmarks]
 
-        cpu_scores = [{"benchmark_name": cb["benchmark_name"], "avg_events_per_second": cb["avg_events_per_second"], 
-                        "total_events": cb["total_events"], "threads": cb["threads"]} 
-                    for cb in cpu_benchmarks]
+#         cpu_scores = [{"benchmark_name": cb["benchmark_name"], "avg_events_per_second": cb["avg_events_per_second"], 
+#                         "total_events": cb["total_events"], "threads": cb["threads"]} 
+#                     for cb in cpu_benchmarks]
 
-        scores = {
-            "disk": disk_scores,
-            "memory": memory_scores,
-            "cpu": cpu_scores,
-            "ping": avg_ping,
-            "uptime_percentage": uptime_percentage,
-            "task_success_rate": success_rate
-        }
+#         scores = {
+#             "disk": disk_scores,
+#             "memory": memory_scores,
+#             "cpu": cpu_scores,
+#             "ping": avg_ping,
+#             "uptime_percentage": uptime_percentage,
+#             "task_success_rate": success_rate
+#         }
 
-        return scores
-    except Exception as e:
-        print(e)
-        return {"status": "error", "message": "Error retrieving provider scores",}
+#         return scores
+#     except Exception as e:
+#         print(e)
+#         return {"status": "error", "message": "Error retrieving provider scores",}
     
 
 from django.utils import timezone

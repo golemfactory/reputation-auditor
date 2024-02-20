@@ -17,6 +17,7 @@ class Provider(models.Model):
     storage = models.FloatField(blank=True, null=True)
     payment_addresses = models.JSONField(default=dict, blank=True, null=True)  # JSON object with payment addresses
     network = models.CharField(max_length=50, default='mainnet')  # 'mainnet' or 'testnet'
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
 
 class Offer(models.Model):
     provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  # Link to a Provider
@@ -144,52 +145,14 @@ async def async_save(obj):
 
 
 
-class NodeStatus(models.Model):
-    provider = models.ForeignKey(Provider, on_delete=models.CASCADE)  # Link to a Provider
-    is_online = models.BooleanField(default=False)  # Whether the node is currently online
-    last_seen = models.DateTimeField(default=timezone.now)
-    total_online_scans = models.IntegerField(default=0) 
-    uptime_percentage = models.FloatField(default=0.0)  # Default uptime percentage as 0%
-    first_seen_scan_count = models.IntegerField(null=True)  # New field to track the scan count at first seen
 
-
-    async def update_status(self, is_online_now, total_scanned_times_overall):
-        if is_online_now:
-            self.total_online_scans += 1
-
-        self.is_online = is_online_now
-        self.last_seen = timezone.now()
-
-        # Set first_seen_scan_count on first successful scan update if it's None
-
-        # Instead of min() use directly the first_seen_scan_count
-        # since it should have been set correctly at the node's first appearance.
-        self.first_seen_scan_count = self.first_seen_scan_count or total_scanned_times_overall
-
-        # Ensure that the total scanned times is at least the same as the first time seen
-        total_scanned_times_overall = max(self.first_seen_scan_count, total_scanned_times_overall)
-
-        # Calculate effective scans
-        effective_scans = total_scanned_times_overall - self.first_seen_scan_count + 1
-
-        # Ensure effective_scans is never zero or negative
-        effective_scans = max(effective_scans, 1)
-
-        # Calculate the uptime percentage
-        self.uptime_percentage = (self.total_online_scans / effective_scans) * 100
-
-        # Ensure the uptime percentage never goes beyond 100%
-        self.uptime_percentage = min(self.uptime_percentage, 100.0)
-
-        await async_save(self)
-
-
-
+class NodeStatusHistory(models.Model):
+    provider = models.ForeignKey(Provider, on_delete=models.CASCADE)
+    is_online = models.BooleanField()
+    timestamp = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        status = "Online" if self.is_online else "Offline"
-        return f"Node {self.provider.node_id} is {status} - Last seen: {self.last_seen}"
-
+        return f"{self.provider.node_id} - {'Online' if self.is_online else 'Offline'} at {self.timestamp}"
 
 class ScanCount(models.Model):
     scan_count = models.IntegerField(default=0)

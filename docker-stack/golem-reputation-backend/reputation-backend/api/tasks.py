@@ -11,6 +11,7 @@ import json, os
 from .models import Task, Provider, Offer
 redis_client = redis.Redis(host='redis', port=6379, db=0)  # Update with your Redis configuration
 
+
 @app.task
 def monitor_nodes_task(subnet_tag='public'):
     # Run the asyncio function using asyncio.run()
@@ -22,12 +23,8 @@ def ping_providers_task(p2p):
     asyncio.run(ping_providers(p2p))
     
 
-
-
 @app.task(queue='benchmarker', options={'queue': 'benchmarker', 'routing_key': 'benchmarker'})
 def benchmark_providers_task():
-    if os.environ.get('BENCHMARK', 'false') != 'true':
-        return 0
     budget_per_provider = os.environ.get('BUDGET_PER_PROVIDER', 0.1)
     mainnet_provider_count = Provider.objects.filter(network='mainnet').count()
     print(f"Found {mainnet_provider_count} online providers on the mainnet")

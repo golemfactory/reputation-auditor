@@ -7,15 +7,52 @@ import sys
 import subprocess
 from datetime import datetime, timedelta
 from django.utils import timezone
-from .models import Provider, NodeStatus, ScanCount, async_get_or_create, async_save
+from .models import Provider, NodeStatusHistory, ScanCount, async_get_or_create, async_save
 from asgiref.sync import sync_to_async
 from yapapi import props as yp
 from yapapi.config import ApiConfig
 from yapapi.log import enable_default_logger
 from yapapi.props.builder import DemandBuilder
 from yapapi.rest import Configuration, Market
-
+from core.celery import app
 from django.db.models import Q
+from django.db.models import Case, When, Value, F
+from django.db import transaction
+
+@app.task()
+def update_providers_info(node_props):
+    node_ids = [prop['node_id'] for prop in node_props]
+    existing_providers = Provider.objects.filter(node_id__in=node_ids)
+    existing_providers_dict = {provider.node_id: provider for provider in existing_providers}
+
+    create_batch = []
+
+    for props in node_props:
+        prop_data = {key: value for key, value in props.items() if key.startswith("golem.com.payment.platform.") and key.endswith(".address")}
+        provider_data = {
+            "payment_addresses": prop_data,
+            "network": 'testnet' if any(key in TESTNET_KEYS for key in props.keys()) else 'mainnet',
+            "cores": props.get("golem.inf.cpu.cores"),
+            "memory": props.get("golem.inf.mem.gib"),
+            "cpu": props.get("golem.inf.cpu.brand"),
+            "runtime": props.get("golem.runtime.name"),
+            "runtime_version": props.get("golem.runtime.version"),
+            "threads": props.get("golem.inf.cpu.threads"),
+            "storage": props.get("golem.inf.storage.gib"),
+            "name": props.get("golem.node.id.name"),
+        }
+
+        issuer_id = props['node_id']
+        if issuer_id in existing_providers_dict:
+            provider_instance = existing_providers_dict[issuer_id]
+            for key, value in provider_data.items():
+                setattr(provider_instance, key, value)
+            update_fields_list = [field for field in provider_data.keys() if field != 'node_id']
+            provider_instance.save(update_fields=update_fields_list)
+        else:
+            create_batch.append(Provider(node_id=issuer_id, **provider_data))
+
+    Provider.objects.bulk_create(create_batch)
 
 
 TESTNET_KEYS = [
@@ -31,97 +68,72 @@ examples_dir = pathlib.Path(__file__).resolve().parent.parent
 sys.path.append(str(examples_dir))
 from .utils import build_parser, print_env_info, format_usage  # noqa: E402
 
-async def update_db(issuer_id, is_online, scanned_times, props=None):
-    if props is not None and props.get("golem.runtime.name") == "vm":
-        # Extracting information from props
-        payment_addresses = {
-        key: value for key, value in props.items()
-        if key.startswith("golem.com.payment.platform.") and key.endswith(".address")
-        }
-        network = 'testnet' if any(key in TESTNET_KEYS for key in payment_addresses.keys()) else 'mainnet'
-        cores = props.get("golem.inf.cpu.cores")
-        memory = props.get("golem.inf.mem.gib")
-        cpu = props.get("golem.inf.cpu.brand")
-        runtime = props.get("golem.runtime.name")
-        runtime_version = props.get("golem.runtime.version")
-        threads = props.get("golem.inf.cpu.threads")
-        storage = props.get("golem.inf.storage.gib")
-        name = props.get("golem.node.id.name")
-        # Database operations
-        provider, created = await async_get_or_create(Provider, node_id=issuer_id)
+import redis
 
+def update_nodes_status(provider_id, is_online_now):
+    provider, created = Provider.objects.get_or_create(node_id=provider_id)
 
-        # Update provider properties if it already exists and has changes
-        updated = False
-        if not created or provider.payment_addresses != payment_addresses:  # If new or there are changes
-            provider.payment_addresses = payment_addresses
-            provider.network = network
-            updated = True
-            
-            # Check each field for changes and update if necessary
-            
-            if provider.cores != cores:
-                provider.cores = cores
-                updated = True
-            if provider.memory != memory:
-                provider.memory = memory
-                updated = True
-            if provider.cpu != cpu:
-                provider.cpu = cpu
-                updated = True
-            if provider.runtime != runtime:
-                provider.runtime = runtime
-                updated = True
-            if provider.runtime_version != runtime_version:
-                provider.runtime_version = runtime_version
-                updated = True
-            if provider.threads != threads:
-                provider.threads = threads
-                updated = True
-            if provider.storage != storage:
-                provider.storage = storage
-                updated = True
-            if provider.name != name:
-                provider.name = name
-                updated = True
-            
-            if updated:  # If any field was updated, save the changes
-                await async_save(provider)
-
-        # Now handle the NodeStatus
-        node_status, _ = await async_get_or_create(NodeStatus, provider=provider, defaults={'first_seen_scan_count': scanned_times})
-        await node_status.update_status(is_online_now=is_online, total_scanned_times_overall=scanned_times)
-        await async_save(node_status)
-    else:
-        # When props are not available, only update the online status
-        provider, _ = await async_get_or_create(Provider, node_id=issuer_id)
-        node_status, _ = await async_get_or_create(NodeStatus, provider=provider)
-        
-        await node_status.update_status(is_online_now=is_online, total_scanned_times_overall=scanned_times)
-        await async_save(node_status)
+    # Check the last status in the NodeStatusHistory
+    last_status = NodeStatusHistory.objects.filter(provider=provider).last()
+    
+    if not last_status or last_status.is_online != is_online_now:
+        # Create a new status entry if there's a change in status
+        NodeStatusHistory.objects.create(provider=provider, is_online=is_online_now)
 
 
 
+@app.task(queue='uptime', options={'queue': 'uptime', 'routing_key': 'uptime'})
+def update_nodes_data(nodes_data, scanned_times):
+    r = redis.Redis(host='redis', port=6379, db=0)
 
-async def check_node_status(issuer_id):
+    # Updating nodes based on the current scan
+    for issuer_id, details in nodes_data.items():
+        is_online_now = check_node_status(issuer_id)
+        print(f"Updating NodeStatus for {issuer_id} with is_online_now={is_online_now}")
+        try:
+            update_nodes_status(issuer_id, is_online_now)
+            r.set(f"provider:{issuer_id}:status", str(is_online_now))
+        except Exception as e:
+            print(f"Error updating NodeStatus for {issuer_id}: {e}")
+
+    # Identifying providers previously online not in the current scan
+    previously_online_providers_ids = Provider.objects.filter(
+        nodestatushistory__is_online=True
+    ).distinct().values_list('node_id', flat=True)
+    
+    provider_ids_not_in_scan = set(previously_online_providers_ids) - set(nodes_data.keys())
+
+    # Verifying and updating status for those previously online but not in the current nodes_data
+    for issuer_id in provider_ids_not_in_scan:
+        is_online_now = check_node_status(issuer_id)
+        print(f"Verifying NodeStatus for {issuer_id} with is_online_now={is_online_now}")
+        try:
+            update_nodes_status(issuer_id, is_online_now)
+            r.set(f"provider:{issuer_id}:status", str(is_online_now))
+        except Exception as e:
+            print(f"Error verifying/updating NodeStatus for {issuer_id}: {e}")
+
+
+
+def check_node_status(issuer_id):
     try:
-        # Use asyncio.create_subprocess_exec to run the command asynchronously
-        process = await asyncio.create_subprocess_exec(
-            "yagna", "net", "find", issuer_id,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+        process = subprocess.run(
+            ["yagna", "net", "find", issuer_id],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5  # 5-second timeout for the subprocess
         )
 
-        # Wait for the command to complete and capture the output
-        stdout, stderr = await process.communicate()
-        
         # Process finished, return True if it was successful and "seen:" is in the output
-        return process.returncode == 0 and "seen:" in stdout.decode()
-    except asyncio.TimeoutError as e:
+        return process.returncode == 0 and "seen:" in process.stdout.decode()
+    except subprocess.TimeoutExpired as e:
         print("Timeout reached while checking node status", e)
         return False
+    except Exception as e:
+        print(f"Unexpected error checking node status: {e}")
+        return False
 
-async def list_offers(conf: Configuration, subnet_tag: str, nodes_data, scanned_times, current_scan_providers):
+async def list_offers(conf: Configuration, subnet_tag: str, nodes_data, scanned_times, current_scan_providers, node_props):
     async with conf.market() as client:
         market_api = Market(client)
         dbuild = DemandBuilder()
@@ -134,30 +146,33 @@ async def list_offers(conf: Configuration, subnet_tag: str, nodes_data, scanned_
                     current_scan_providers.add(event.issuer)
 
                     if event.issuer not in nodes_data:
-                        nodes_data[event.issuer] = {
-                            "last_seen": datetime.now(),
-                            "is_online": False
-                        }
-                        await update_db(event.issuer, True, scanned_times, event.props)
+                        event.props['node_id'] = event.issuer
+                        node_props.append(event.props)
                     else:
-                        continue
+                        # Check if there is an existing 'wasmtime' entry for the same issuer
+                        existing_entry = next((item for item in node_props if item['node_id'] == event.issuer and item.get("golem.runtime.name") == "wasmtime"), None)
+                        if existing_entry and event.props.get("golem.runtime.name") == "vm":
+                            # Replace the existing 'wasmtime' entry with the 'vm' entry
+                            node_props[node_props.index(existing_entry)] = event.props
+
 
                     
                     
 
 async def monitor_nodes_status(subnet_tag: str = "public"):
     nodes_data = {}
-    ScanCount.increment()  # Increment the scan count
-    scanned_times = ScanCount.get_current_count()  # Load the current scan count
-    current_scan_providers = set()  # Initialize an empty set for the current scan
-    
+    node_props = []
+    current_scan_providers = set()
+    scanned_times = ScanCount.get_current_count()
 
+    # Call list_offers with a timeout
     try:
         await asyncio.wait_for(
             list_offers(
                 Configuration(api_config=ApiConfig()),
                 subnet_tag=subnet_tag,
                 nodes_data=nodes_data,
+                node_props=node_props,
                 scanned_times=scanned_times,
                 current_scan_providers=current_scan_providers
             ),
@@ -166,27 +181,8 @@ async def monitor_nodes_status(subnet_tag: str = "public"):
     except asyncio.TimeoutError:
         print("Scan timeout reached")
 
-    RECENT_TIMEFRAME = timedelta(seconds=30)
+    # Delay update_nodes_data call using Celery
+    update_nodes_data.delay(nodes_data, scanned_times)
+    update_providers_info.delay(node_props)
 
-    # Get the current time
-    current_time = timezone.now()
-
-    # Query NodeStatus objects that were last seen within the RECENT_TIMEFRAME and are marked as online
-    recent_nodes = await sync_to_async(NodeStatus.objects.filter)(
-        last_seen__lt=current_time - RECENT_TIMEFRAME, 
-        is_online=True
-    )
-
-    # Iterate over these nodes and check their current status
-    for node_status in recent_nodes:
-        # Ensure the node is not in the current scan data
-        if node_status.provider.node_id not in nodes_data:
-            # Perform the online check
-            is_online = await check_node_status(node_status.provider.node_id)
-
-            if not is_online:
-                # If the node is not online, update the database
-                await update_db(node_status.provider.node_id, False, scanned_times)
-
-
-
+    

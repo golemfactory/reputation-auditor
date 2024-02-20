@@ -1,7 +1,7 @@
 import asyncio
 import json
 import subprocess
-from .models import NodeStatus, PingResult, PingResultP2P
+from .models import NodeStatusHistory, PingResult, PingResultP2P
 from asgiref.sync import sync_to_async
 
 
@@ -9,11 +9,18 @@ from asgiref.sync import sync_to_async
 async def async_fetch_node_ids():
     # Define the synchronous part as an inner function
     def get_node_ids():
-        return [provider.provider.node_id for provider in NodeStatus.objects.filter(is_online=True).select_related('provider').only('provider__node_id')]
+        # Fetch the latest status for each provider and filter those that are online
+        latest_statuses = NodeStatusHistory.objects.filter(
+            provider_id__in=NodeStatusHistory.objects.order_by('provider', '-timestamp').distinct('provider').values_list('provider_id', flat=True)
+        ).order_by('provider', '-timestamp').distinct('provider')
+
+        # Return provider IDs where the latest status is online
+        return [status.provider.node_id for status in latest_statuses if status.is_online]
 
     # Use sync_to_async to convert it and immediately invoke
     node_ids = await sync_to_async(get_node_ids, thread_sensitive=True)()
     return node_ids
+
 
 
 async def async_bulk_create_ping_results(all_data, p2p):

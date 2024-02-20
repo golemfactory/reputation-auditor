@@ -18,7 +18,7 @@ def setup_periodic_tasks(sender, **kwargs):
     from api.tasks import monitor_nodes_task, ping_providers_task, benchmark_providers_task, process_offers_from_redis
 
     sender.add_periodic_task(
-        40.0,
+        60.0,
         monitor_nodes_task.s(),
         queue="uptime",
         options={"queue": "uptime", "routing_key": "uptime"},
