@@ -128,24 +128,6 @@ class PingResultP2P(models.Model):
 
 
 
-
-from django.utils import timezone
-from django.db.models import F
-
-
-from asgiref.sync import sync_to_async
-
-
-# This decorator turns sync functions (like Django ORM calls) into async functions
-async def async_get_or_create(model, defaults=None, **kwargs):
-    return await sync_to_async(model.objects.get_or_create, thread_sensitive=True)(defaults=defaults, **kwargs)
-
-async def async_save(obj):
-    await sync_to_async(obj.save, thread_sensitive=True)()
-
-
-
-
 class NodeStatusHistory(models.Model):
     provider = models.ForeignKey(Provider, on_delete=models.CASCADE)
     is_online = models.BooleanField()
@@ -154,16 +136,3 @@ class NodeStatusHistory(models.Model):
     def __str__(self):
         return f"{self.provider.node_id} - {'Online' if self.is_online else 'Offline'} at {self.timestamp}"
 
-class ScanCount(models.Model):
-    scan_count = models.IntegerField(default=0)
-
-    @classmethod
-    def increment(cls):
-        obj, created = cls.objects.get_or_create(id=1)
-        obj.scan_count = F('scan_count') + 1
-        obj.save()
-
-    @classmethod
-    def get_current_count(cls):
-        obj, created = cls.objects.get_or_create(id=1)
-        return obj.scan_count

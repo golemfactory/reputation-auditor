@@ -7,7 +7,7 @@ import sys
 import subprocess
 from datetime import datetime, timedelta
 from django.utils import timezone
-from .models import Provider, NodeStatusHistory, ScanCount, async_get_or_create, async_save
+from .models import Provider, NodeStatusHistory
 from asgiref.sync import sync_to_async
 from yapapi import props as yp
 from yapapi.config import ApiConfig
@@ -83,11 +83,11 @@ def update_nodes_status(provider_id, is_online_now):
 
 
 @app.task(queue='uptime', options={'queue': 'uptime', 'routing_key': 'uptime'})
-def update_nodes_data(nodes_data, scanned_times):
+def update_nodes_data(node_props):
     r = redis.Redis(host='redis', port=6379, db=0)
 
-    # Updating nodes based on the current scan
-    for issuer_id, details in nodes_data.items():
+    for props in node_props:
+        issuer_id = props['node_id']
         is_online_now = check_node_status(issuer_id)
         print(f"Updating NodeStatus for {issuer_id} with is_online_now={is_online_now}")
         try:
@@ -96,14 +96,13 @@ def update_nodes_data(nodes_data, scanned_times):
         except Exception as e:
             print(f"Error updating NodeStatus for {issuer_id}: {e}")
 
-    # Identifying providers previously online not in the current scan
+    provider_ids_in_props = {props['node_id'] for props in node_props}
     previously_online_providers_ids = Provider.objects.filter(
         nodestatushistory__is_online=True
     ).distinct().values_list('node_id', flat=True)
     
-    provider_ids_not_in_scan = set(previously_online_providers_ids) - set(nodes_data.keys())
+    provider_ids_not_in_scan = set(previously_online_providers_ids) - provider_ids_in_props
 
-    # Verifying and updating status for those previously online but not in the current nodes_data
     for issuer_id in provider_ids_not_in_scan:
         is_online_now = check_node_status(issuer_id)
         print(f"Verifying NodeStatus for {issuer_id} with is_online_now={is_online_now}")
@@ -133,7 +132,8 @@ def check_node_status(issuer_id):
         print(f"Unexpected error checking node status: {e}")
         return False
 
-async def list_offers(conf: Configuration, subnet_tag: str, nodes_data, scanned_times, current_scan_providers, node_props):
+async def list_offers(conf: Configuration, subnet_tag: str, current_scan_providers, node_props):
+    nodes_data = {}
     async with conf.market() as client:
         market_api = Market(client)
         dbuild = DemandBuilder()
@@ -160,10 +160,8 @@ async def list_offers(conf: Configuration, subnet_tag: str, nodes_data, scanned_
                     
 
 async def monitor_nodes_status(subnet_tag: str = "public"):
-    nodes_data = {}
     node_props = []
     current_scan_providers = set()
-    scanned_times = ScanCount.get_current_count()
 
     # Call list_offers with a timeout
     try:
@@ -171,9 +169,7 @@ async def monitor_nodes_status(subnet_tag: str = "public"):
             list_offers(
                 Configuration(api_config=ApiConfig()),
                 subnet_tag=subnet_tag,
-                nodes_data=nodes_data,
                 node_props=node_props,
-                scanned_times=scanned_times,
                 current_scan_providers=current_scan_providers
             ),
             timeout=30  # 30-second timeout for each scan
@@ -182,7 +178,7 @@ async def monitor_nodes_status(subnet_tag: str = "public"):
         print("Scan timeout reached")
 
     # Delay update_nodes_data call using Celery
-    update_nodes_data.delay(nodes_data, scanned_times)
+    update_nodes_data.delay(node_props)
     update_providers_info.delay(node_props)
 
     
