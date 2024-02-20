@@ -19,13 +19,14 @@ from django.db.models import Q
 from django.db.models import Case, When, Value, F
 from django.db import transaction
 
-@app.task()
+@app.task(queue='default', options={'queue': 'default', 'routing_key': 'default'})
 def update_providers_info(node_props):
     node_ids = [prop['node_id'] for prop in node_props]
     existing_providers = Provider.objects.filter(node_id__in=node_ids)
     existing_providers_dict = {provider.node_id: provider for provider in existing_providers}
 
     create_batch = []
+    update_batch = []
 
     for props in node_props:
         prop_data = {key: value for key, value in props.items() if key.startswith("golem.com.payment.platform.") and key.endswith(".address")}
@@ -47,12 +48,12 @@ def update_providers_info(node_props):
             provider_instance = existing_providers_dict[issuer_id]
             for key, value in provider_data.items():
                 setattr(provider_instance, key, value)
-            update_fields_list = [field for field in provider_data.keys() if field != 'node_id']
-            provider_instance.save(update_fields=update_fields_list)
+            update_batch.append(provider_instance)
         else:
             create_batch.append(Provider(node_id=issuer_id, **provider_data))
-
-    Provider.objects.bulk_create(create_batch)
+    
+    Provider.objects.bulk_create(create_batch, ignore_conflicts=True)
+    Provider.objects.bulk_update(update_batch, [field for field in provider_data.keys() if field != 'node_id'])
 
 
 TESTNET_KEYS = [

@@ -39,12 +39,11 @@ jobs:
                   script: |
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend:${{ github.sha }} reputation_django
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery:${{ github.sha }} reputation_celery
-                      docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_benchmarker_worker
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-beat:${{ github.sha }} reputation_celery_beat
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_uptime_worker
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_ping_worker
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_ping_worker_p2p
-                      
+
                       docker image prune -f
 
             - name: Deploy to europe reputation instance
@@ -57,12 +56,11 @@ jobs:
                   script: |
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend:${{ github.sha }} reputation_django
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery:${{ github.sha }} reputation_celery
-                      docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_benchmarker_worker
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-beat:${{ github.sha }} reputation_celery_beat
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_uptime_worker
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_ping_worker
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_ping_worker_p2p
-                      
+
                       docker image prune -f
 
             - name: Deploy to US reputation instance
@@ -75,10 +73,9 @@ jobs:
                   script: |
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend:${{ github.sha }} reputation_django
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery:${{ github.sha }} reputation_celery
-                      docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_benchmarker_worker
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-beat:${{ github.sha }} reputation_celery_beat
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_uptime_worker
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_ping_worker
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:${{ github.sha }} reputation_ping_worker_p2p
-                      
+
                       docker image prune -f

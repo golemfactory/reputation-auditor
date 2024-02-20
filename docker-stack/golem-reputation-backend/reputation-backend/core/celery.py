@@ -15,13 +15,19 @@ app = Celery("core")
 
 @app.on_after_finalize.connect
 def setup_periodic_tasks(sender, **kwargs):
-    from api.tasks import monitor_nodes_task, ping_providers_task, benchmark_providers_task, process_offers_from_redis
+    from api.tasks import monitor_nodes_task, ping_providers_task, benchmark_providers_task, process_offers_from_redis, update_provider_scores
 
     sender.add_periodic_task(
         60.0,
         monitor_nodes_task.s(),
         queue="uptime",
         options={"queue": "uptime", "routing_key": "uptime"},
+    )
+    sender.add_periodic_task(
+        60.0,
+        update_provider_scores.s(),
+        queue="default",
+        options={"queue": "default", "routing_key": "default"},
     )
     sender.add_periodic_task(
         30.0,

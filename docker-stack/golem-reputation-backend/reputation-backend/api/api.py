@@ -16,63 +16,20 @@ from datetime import datetime, timedelta
 
 from .scoring import get_provider_benchmark_scores
 from django.db.models.functions import Coalesce
-def calculate_uptime(provider_id):
-    provider = Provider.objects.get(node_id=provider_id)
-    statuses = NodeStatusHistory.objects.filter(provider=provider).order_by('timestamp')
 
-    online_duration = timedelta(0)
-    last_online_time = None
-
-    for status in statuses:
-        if status.is_online:
-            last_online_time = status.timestamp
-        elif last_online_time:
-            online_duration += status.timestamp - last_online_time
-            last_online_time = None
-
-    # Check if the node is currently online and add the duration
-    if last_online_time is not None:
-        online_duration += timezone.now() - last_online_time
-
-    total_duration = timezone.now() - provider.created_at
-    uptime_percentage = (online_duration.total_seconds() / total_duration.total_seconds()) * 100
-    return uptime_percentage
+r = redis.Redis(host='redis', port=6379, db=0)
 
 
 @api.get("/providers/scores")
 def list_provider_scores(request):
-    ten_days_ago = timezone.now() - timedelta(days=10)
-    providers = Provider.objects.annotate(
-        success_count=Count('taskcompletion', filter=Q(taskcompletion__is_successful=True, taskcompletion__timestamp__gte=ten_days_ago)),
-        total_count=Count('taskcompletion', filter=Q(taskcompletion__timestamp__gte=ten_days_ago)),
-    ).all()
+    response = r.get('provider_scores')
 
-    response = {"providers": [], "rejected": []}
-    for provider in providers:
-        if provider.total_count > 0:
-            success_ratio = provider.success_count / provider.total_count
-            scores = {}
-            uptime_percentage = calculate_uptime(provider.node_id)
-            
-            scores.update({
-                "successRate": success_ratio,
-                "uptime": uptime_percentage / 100  # Normalize uptime to a 0-1 scale, if desired
-            })
-            response["providers"].append({
-                "providerId": provider.node_id,
-                "scores": scores
-            })
-    providers_with_no_tasks = Provider.objects.filter(taskcompletion__isnull=True)
-    for provider in providers_with_no_tasks:
-        uptime_percentage = calculate_uptime(provider.node_id)
-        response["rejected"].append({
-            "providerId": provider.node_id,
-            "scores": {
-                "successRate": 0,
-                "uptime": uptime_percentage / 100
-            }
-        })
-    return response
+    if response:
+        return json.loads(response)
+    else:
+        # Handle the case where data is not yet available in Redis
+        return JsonResponse({"error": "Data not available"}, status=503)
+
 
 
 @api.post("/benchmark/bulk")

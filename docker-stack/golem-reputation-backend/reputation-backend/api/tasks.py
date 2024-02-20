@@ -70,3 +70,45 @@ def process_offers_from_redis():
 
     # Bulk create offers
     Offer.objects.bulk_create(offers_to_create)
+
+
+from django.db.models import Count, Q
+from datetime import timedelta
+from django.utils import timezone
+from .scoring import calculate_uptime
+
+@app.task(queue='default', options={'queue': 'default', 'routing_key': 'default'})
+def update_provider_scores():
+    r = redis.Redis(host='redis', port=6379, db=0)
+    ten_days_ago = timezone.now() - timedelta(days=10)
+    providers = Provider.objects.annotate(
+        success_count=Count('taskcompletion', filter=Q(taskcompletion__is_successful=True, taskcompletion__timestamp__gte=ten_days_ago)),
+        total_count=Count('taskcompletion', filter=Q(taskcompletion__timestamp__gte=ten_days_ago)),
+    ).all()
+
+    response = {"providers": [], "rejected": []}
+    for provider in providers:
+        if provider.total_count > 0:
+            success_ratio = provider.success_count / provider.total_count
+            uptime_percentage = calculate_uptime(provider.node_id)
+            
+            response["providers"].append({
+                "providerId": provider.node_id,
+                "scores": {
+                    "successRate": success_ratio,
+                    "uptime": uptime_percentage / 100
+                }
+            })
+    providers_with_no_tasks = Provider.objects.filter(taskcompletion__isnull=True)
+    for provider in providers_with_no_tasks:
+        uptime_percentage = calculate_uptime(provider.node_id)
+        response["rejected"].append({
+            "providerId": provider.node_id,
+            "scores": {
+                "successRate": 0,
+                "uptime": uptime_percentage / 100
+            }
+        })
+
+    # Store the response in Redis
+    r.set('provider_scores', json.dumps(response))
