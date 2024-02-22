@@ -10,6 +10,7 @@ export async function bulkSubmitTaskStatuses(taskStatuses: TaskCompletion[]) {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
+                Authorization: `Bearer ${process.env.BACKEND_API_TOKEN}`,
             },
             body: JSON.stringify(taskStatuses), // Modified to send the array directly
         })
@@ -55,7 +56,7 @@ export async function submitBulkBenchmark(benchmarks: Benchmark[]): Promise<stri
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                // Include other necessary headers, such as authentication tokens
+                Authorization: `Bearer ${process.env.BACKEND_API_TOKEN}`,
             },
             // The body now includes a 'benchmarks' field containing an array of benchmark entries
             body: JSON.stringify({ benchmarks }),
@@ -112,8 +113,8 @@ export async function getBlacklistedOperators(): Promise<string[] | undefined> {
             const data = (await response.json()) as string[]
             return data
         } else {
-            console.error(`Failed to initialize blacklisted providers, reponse not OK: ${response.status} ${response.statusText}`);
-            console.error(await response.text());
+            console.error(`Failed to initialize blacklisted providers, reponse not OK: ${response.status} ${response.statusText}`)
+            console.error(await response.text())
             process.exit(1)
         }
     } catch (error) {
@@ -133,7 +134,7 @@ export async function sendStartTaskSignal(): Promise<string | undefined> {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                // Include other headers as required, like authentication tokens
+                Authorization: `Bearer ${process.env.BACKEND_API_TOKEN}`,
             },
             body: jsonData,
         })
@@ -159,7 +160,7 @@ export async function sendStopTaskSignal(taskId: string, cost: number): Promise<
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                // Include other headers as required, like authentication tokens
+                Authorization: `Bearer ${process.env.BACKEND_API_TOKEN}`,
             },
         })
 
@@ -194,7 +195,7 @@ export async function sendOfferFromProvider(
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                // Include other headers as required, like authentication tokens
+                Authorization: `Bearer ${process.env.BACKEND_API_TOKEN}`,
             },
             body: data,
         })
@@ -228,7 +229,7 @@ export async function sendBulkTaskCostUpdates(
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                // Include other headers as required, such as authentication tokens.
+                Authorization: `Bearer ${process.env.BACKEND_API_TOKEN}`,
             },
             body: data,
         })

@@ -164,6 +164,7 @@ services:
             - ./.envs/.django
         volumes:
             - "./key.json:/key.json"
+            - "./benchmarker-datadir:/root/.local/share/yagna/"
         healthcheck:
             test: /check_yagna.sh || exit 1
             interval: 15s

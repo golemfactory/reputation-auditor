@@ -9,10 +9,21 @@ from collections import defaultdict
 from django.db.models import Avg, Count, Q
 from .tasks import benchmark_providers_task
 from .bulkutils import process_disk_benchmark, process_cpu_benchmark, process_memory_benchmark, process_network_benchmark
-api = NinjaAPI()
+api = NinjaAPI(
+    title="Golem Reputation API",
+    version="1.0.0",
+    description="API for Golem Reputation Backend",
+    urls_namespace="api",
+)
 import redis
 from datetime import datetime, timedelta
+from ninja.security import HttpBearer
+import os
 
+class AuthBearer(HttpBearer):
+    def authenticate(self, request, token):
+        if token == os.environ.get("BACKEND_API_TOKEN"):
+            return token
 
 from .scoring import get_provider_benchmark_scores
 from django.db.models.functions import Coalesce
@@ -22,7 +33,7 @@ r = redis.Redis(host='redis', port=6379, db=0)
 
 @api.get("/providers/scores")
 def list_provider_scores(request):
-    response = r.get('provider_scores')
+    response = r.get('provider_scores_v1')
 
     if response:
         return json.loads(response)
@@ -32,7 +43,7 @@ def list_provider_scores(request):
 
 
 
-@api.post("/benchmark/bulk")
+@api.post("/benchmark/bulk", auth=AuthBearer())
 def create_bulk_benchmark(request, bulk_data: BulkBenchmarkSchema):
     organized_data = {"disk": [], "cpu": [], "memory": [], "network": []}
     for benchmark in bulk_data.benchmarks:
@@ -50,88 +61,9 @@ def create_bulk_benchmark(request, bulk_data: BulkBenchmarkSchema):
         "network": network_response
     }
 
-
-## We need to convert some of the incoming data to the correct type due to the fact that when we cat the results in the task script, they are all strings
-
-@api.post("/benchmark/disk")
-def create_disk_benchmark(request, data: DiskBenchmarkSchema):
-    try:
-        provider, created = Provider.objects.get_or_create(node_id=data.node_id)
-        benchmark = DiskBenchmark.objects.create(
-            provider_id=provider.node_id,
-            benchmark_name=data.benchmark_name,
-            reads_per_second=float(data.reads_per_second),
-            writes_per_second=float(data.writes_per_second),
-            fsyncs_per_second=float(data.fsyncs_per_second),
-            read_throughput_mb_ps=float(data.read_throughput_mb_ps),
-            write_throughput_mb_ps=float(data.write_throughput_mb_ps),
-            total_time_sec=float(data.total_time_sec),
-            total_io_events=int(data.total_io_events),
-            min_latency_ms=float(data.min_latency_ms),
-            avg_latency_ms=float(data.avg_latency_ms),
-            max_latency_ms=float(data.max_latency_ms),
-            latency_95th_percentile_ms=float(data.latency_95th_percentile_ms)
-        )
-        return {"status": "success", "message": "Disk Benchmark data saved successfully", "id": benchmark.id}
-    except Exception as e:
-        print(e)
-        return {"status": "error", "message": "Error saving Disk benchmark data",}
-
-@api.post("/benchmark/cpu")
-def create_cpu_benchmark(request, data: CpuBenchmarkSchema):
-        
-    try:
-        provider, created = Provider.objects.get_or_create(node_id=data.node_id)
-        # Creates a new CpuBenchmark object and saves it
-        benchmark = CpuBenchmark.objects.create(
-            provider_id=provider.node_id,
-            benchmark_name=data.benchmark_name,
-            threads=int(data.threads),
-            total_time_sec=data.total_time_sec.replace("s", ""),
-            total_events=int(data.total_events),
-            events_per_second=float(data.events_per_second),
-            min_latency_ms=float(data.min_latency_ms),
-            avg_latency_ms=float(data.avg_latency_ms),
-            max_latency_ms=float(data.max_latency_ms),
-            latency_95th_percentile_ms=float(data.latency_95th_percentile_ms),
-            sum_latency_ms=float(data.sum_latency_ms)
-        )
-        return {"status": "success", "message": "CPU Benchmark data saved successfully", "id": benchmark.id}
-    except Exception as e:
-        print(e)
-        return {"status": "error", "message": "Error saving CPU benchmark data",}
-
-@api.post("/benchmark/memory")
-def create_memory_benchmark(request, data: MemoryBenchmarkSchema):
-    try:
-        # Use get_or_create with only the node_id, as no other default data is available
-        provider, created = Provider.objects.get_or_create(node_id=data.node_id)
-
-        benchmark = MemoryBenchmark.objects.create(
-            provider=provider,
-            benchmark_name=data.benchmark_name,
-            total_operations=int(data.total_operations),
-            operations_per_second=float(data.operations_per_second),
-            total_data_transferred_mi_b=float(data.total_data_transferred_mi_b),
-            throughput_mi_b_sec=float(data.throughput_mi_b_sec),
-            total_time_sec=float(data.total_time_sec),
-            total_events=int(data.total_events),
-            min_latency_ms=float(data.min_latency_ms),
-            avg_latency_ms=float(data.avg_latency_ms),
-            max_latency_ms=float(data.max_latency_ms),
-            latency_95th_percentile_ms=float(data.latency_95th_percentile_ms),
-            sum_latency_ms=float(data.sum_latency_ms),
-            events=float(data.events),
-            execution_time_sec=float(data.execution_time_sec)
-        )
-        return {"status": "success", "message": "Memory Benchmark data saved successfully"}
-    except Exception as e:
-        print(e)
-        return {"status": "error", "message": "Error saving memory benchmark data"}
-
     
 
-@api.post("/submit/task/status/bulk")
+@api.post("/submit/task/status/bulk", auth=AuthBearer())
 def create_bulk_task_completion(request, data: List[TaskCompletionSchema]):
     task_completion_data = []
     errors = []
@@ -354,12 +286,12 @@ def blacklisted_providers(request):
     return blacklisted_providers
 
 
-@api.post("/task/start")
+@api.post("/task/start",  auth=AuthBearer())
 def start_task(request, payload: TaskCreateSchema):
     task = Task.objects.create(name=payload.name, started_at=timezone.now())
     return {"id": task.id, "name": task.name, "started_at": task.started_at}
 
-@api.post("/task/end/{task_id}")
+@api.post("/task/end/{task_id}",  auth=AuthBearer())
 def end_task(request, task_id: int, cost: float):
     try:
         task = Task.objects.get(id=task_id)
@@ -374,7 +306,7 @@ from django.shortcuts import get_object_or_404
 
 from .schemas import BulkTaskCostUpdateSchema
 
-@api.post("/tasks/update-costs")
+@api.post("/tasks/update-costs", auth=AuthBearer())
 def bulk_update_task_costs(request, payload: BulkTaskCostUpdateSchema):
     try:
         task_completions_to_update = []
@@ -418,7 +350,7 @@ def bulk_update_task_costs(request, payload: BulkTaskCostUpdateSchema):
 
 redis_client = redis.Redis(host='redis', port=6379, db=0)  # Update with your Redis configuration
 
-@api.post("/task/offer/{task_id}")
+@api.post("/task/offer/{task_id}", auth=AuthBearer())
 def store_offer(request, task_id: int):
     try:
         json_data = json.loads(request.body)
@@ -446,7 +378,7 @@ def store_offer(request, task_id: int):
     return JsonResponse({"status": "success", "message": "Offer stored in Redis"})
 
 
-@api.get("/benchmark")
-def start_benchmark(request, ):
+@api.get("/benchmark", auth=AuthBearer())
+def start_benchmark(request):
     benchmark_providers_task.delay()
     return {"status": "ok"}

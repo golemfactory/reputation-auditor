@@ -106,3 +106,23 @@ def get_provider_benchmark_scores(provider, recent_n=3):
     
 
     return scores
+
+
+def get_normalized_cpu_scores():
+    # Query the CPU benchmarks and get the max events_per_second for normalization
+    max_single_thread_eps = CpuBenchmark.objects.filter(benchmark_name="CPU Single-thread Benchmark").aggregate(Max('events_per_second'))['events_per_second__max']
+    max_multi_thread_eps = CpuBenchmark.objects.filter(benchmark_name="CPU Multi-thread Benchmark").aggregate(Max('events_per_second'))['events_per_second__max']
+
+    cpu_scores = {}
+
+    # Query for each provider
+    for provider in Provider.objects.all():
+        single_thread_score = CpuBenchmark.objects.filter(provider=provider, benchmark_name="CPU Single-thread Benchmark").first()
+        multi_thread_score = CpuBenchmark.objects.filter(provider=provider, benchmark_name="CPU Multi-thread Benchmark").first()
+
+        cpu_scores[provider.node_id] = {
+            "single_thread_score": single_thread_score.events_per_second / max_single_thread_eps if single_thread_score else 0,
+            "multi_thread_score": multi_thread_score.events_per_second / max_multi_thread_eps if multi_thread_score else 0
+        }
+
+    return cpu_scores
