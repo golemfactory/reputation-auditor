@@ -25,7 +25,13 @@ def setup_periodic_tasks(sender, **kwargs):
     )
     sender.add_periodic_task(
         60.0,
-        update_provider_scores.s(),
+        update_provider_scores.s(network="mainnet"),
+        queue="default",
+        options={"queue": "default", "routing_key": "default"},
+    )
+    sender.add_periodic_task(
+        60.0,
+        update_provider_scores.s(network="testnet"),
         queue="default",
         options={"queue": "default", "routing_key": "default"},
     )

@@ -92,13 +92,13 @@ from django.utils import timezone
 from .scoring import calculate_uptime, get_normalized_cpu_scores
 
 @app.task(queue='default', options={'queue': 'default', 'routing_key': 'default'})
-def update_provider_scores():
+def update_provider_scores(network):
     try:
         r = redis.Redis(host='redis', port=6379, db=0)
         ten_days_ago = timezone.now() - timedelta(days=10)
         recent_online_providers = NodeStatusHistory.objects.filter(is_online=True).order_by('provider', '-timestamp').distinct('provider')
         online_provider_ids = [status.provider_id for status in recent_online_providers]
-        providers = Provider.objects.filter(node_id__in=online_provider_ids).annotate(
+        providers = Provider.objects.filter(node_id__in=online_provider_ids, network=network).annotate(
             success_count=Count('taskcompletion', filter=Q(taskcompletion__is_successful=True, taskcompletion__timestamp__gte=ten_days_ago)),
             total_count=Count('taskcompletion', filter=Q(taskcompletion__timestamp__gte=ten_days_ago)),
         ).all()
@@ -131,7 +131,7 @@ def update_provider_scores():
                 response_v1["providers"].append(provider_info_v1)
                 response_v2["providers"].append(provider_info_v2)
 
-        providers_with_no_tasks = Provider.objects.filter(node_id__in=online_provider_ids, taskcompletion__isnull=True)
+        providers_with_no_tasks = Provider.objects.filter(node_id__in=online_provider_ids, taskcompletion__isnull=True, network=network)
         for provider in providers_with_no_tasks:
             uptime_percentage = calculate_uptime(provider.node_id)
             rejected_info = {
@@ -143,8 +143,8 @@ def update_provider_scores():
             response_v1["rejected"].append(rejected_info)
             response_v2["rejected"].append(rejected_info)
 
-        r.set('provider_scores_v1', json.dumps(response_v1))
-        r.set('provider_scores_v2', json.dumps(response_v2))
+        r.set(f'provider_scores_v1_{network}', json.dumps(response_v1))
+        r.set(f'provider_scores_v2_{network}', json.dumps(response_v2))
     except Exception as e:
         # Implement proper logging or handling
         print(f"Error updating provider scores: {e}")
