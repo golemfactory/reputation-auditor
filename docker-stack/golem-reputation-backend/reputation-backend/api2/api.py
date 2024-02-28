@@ -17,9 +17,9 @@ r = redis.Redis(host='redis', port=6379, db=0)
 @api.get("/providers/scores")
 def list_provider_scores(request, network: str = 'polygon'):
     if network == 'polygon' or network == 'mainnet':
-        response = r.get('provider_scores_v1_mainnet')
+        response = r.get('provider_scores_v2_mainnet')
     elif network == 'goerli' or network == 'mumbai' or network == 'holesky':
-        response = r.get('provider_scores_v1_testnet')
+        response = r.get('provider_scores_v2_testnet')
     else:
         return JsonResponse({"error": "Network not found"}, status=404)
 
