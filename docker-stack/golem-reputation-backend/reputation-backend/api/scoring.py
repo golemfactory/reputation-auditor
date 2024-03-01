@@ -106,23 +106,43 @@ def get_provider_benchmark_scores(provider, recent_n=3):
     
 
     return scores
-
+from django.db.models import Max, Avg
 
 def get_normalized_cpu_scores():
-    # Query the CPU benchmarks and get the max events_per_second for normalization
     max_single_thread_eps = CpuBenchmark.objects.filter(benchmark_name="CPU Single-thread Benchmark").aggregate(Max('events_per_second'))['events_per_second__max']
     max_multi_thread_eps = CpuBenchmark.objects.filter(benchmark_name="CPU Multi-thread Benchmark").aggregate(Max('events_per_second'))['events_per_second__max']
 
+    # Calculate average performance for single-thread and multi-thread
+    avg_single_thread_eps = CpuBenchmark.objects.filter(benchmark_name="CPU Single-thread Benchmark").aggregate(Avg('events_per_second'))['events_per_second__avg']
+    avg_multi_thread_eps = CpuBenchmark.objects.filter(benchmark_name="CPU Multi-thread Benchmark").aggregate(Avg('events_per_second'))['events_per_second__avg']
+
     cpu_scores = {}
+
+    # Function to determine penalty weight based on deviation
+    def penalty_weight(deviation):
+        if deviation <= 5:
+            return 1.0  # No penalty
+        elif 5 < deviation <= 15:
+            return 0.7  # Small penalty
+        else:
+            return 0.4  # Larger penalty
 
     # Query for each provider
     for provider in Provider.objects.all():
-        single_thread_score = CpuBenchmark.objects.filter(provider=provider, benchmark_name="CPU Single-thread Benchmark").first()
-        multi_thread_score = CpuBenchmark.objects.filter(provider=provider, benchmark_name="CPU Multi-thread Benchmark").first()
+        single_thread_score_obj = CpuBenchmark.objects.filter(provider=provider, benchmark_name="CPU Single-thread Benchmark").first()
+        multi_thread_score_obj = CpuBenchmark.objects.filter(provider=provider, benchmark_name="CPU Multi-thread Benchmark").first()
 
+        # Calculate deviations
+        single_thread_deviation = abs(single_thread_score_obj.events_per_second - avg_single_thread_eps) / avg_single_thread_eps * 100 if single_thread_score_obj else 0
+        multi_thread_deviation = abs(multi_thread_score_obj.events_per_second - avg_multi_thread_eps) / avg_multi_thread_eps * 100 if multi_thread_score_obj else 0
+        # Apply penalty weights
+        single_thread_penalty_weight = penalty_weight(single_thread_deviation)
+        multi_thread_penalty_weight = penalty_weight(multi_thread_deviation)
+
+        # Normalize scores and apply penalties
         cpu_scores[provider.node_id] = {
-            "single_thread_score": single_thread_score.events_per_second / max_single_thread_eps if single_thread_score else 0,
-            "multi_thread_score": multi_thread_score.events_per_second / max_multi_thread_eps if multi_thread_score else 0
+            "single_thread_score": (single_thread_score_obj.events_per_second / max_single_thread_eps) * single_thread_penalty_weight if single_thread_score_obj else 0,
+            "multi_thread_score": (multi_thread_score_obj.events_per_second / max_multi_thread_eps) * multi_thread_penalty_weight if multi_thread_score_obj else 0
         }
 
     return cpu_scores

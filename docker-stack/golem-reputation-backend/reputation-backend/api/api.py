@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 from ninja.security import HttpBearer
 import os
 
+
 class AuthBearer(HttpBearer):
     def authenticate(self, request, token):
         if token == os.environ.get("BACKEND_API_TOKEN"):
@@ -30,6 +31,11 @@ from django.db.models.functions import Coalesce
 
 r = redis.Redis(host='redis', port=6379, db=0)
 
+
+@api.get("/wallet/{wallet_address}")
+def walletda(request, wallet_address: str):
+    data = get_blacklisted_operators()
+    return JsonResponse(data, safe=False)
 
 @api.get("/providers/scores")
 def list_provider_scores(request, network: str = 'polygon'):
@@ -217,79 +223,22 @@ from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Count, Avg, StdDev, FloatField, Q, Subquery, OuterRef, F
 from django.db.models.functions import Cast
-
+from .models import BlacklistedOperator, BlacklistedProvider
+from .blacklist import get_blacklisted_operators, get_blacklisted_providers
 @api.get("/blacklisted-operators", response=List[str])
 def blacklisted_operators(request):
-    now = timezone.now()
-    recent_tasks = TaskCompletion.objects.filter(
-        timestamp__gte=now - timedelta(days=3)  # Adjust the days according to your requirement
-    ).values('provider__payment_addresses__golem.com.payment.platform.erc20-mainnet-glm.address').annotate(
-        successful_tasks=Count('pk', filter=Q(is_successful=True)),
-        total_tasks=Count('pk'),
-        success_ratio=Cast('successful_tasks', FloatField()) / Cast('total_tasks', FloatField())
-    ).exclude(total_tasks=0)
+    rejected_operators = BlacklistedOperator.objects.all().values('wallet')
+    # Extracting just the wallet field from each object
+    rejected_wallets_list = [operator['wallet'] for operator in rejected_operators]
+    print(rejected_wallets_list, "rejected_wallets_list")
+    return rejected_wallets_list
 
-    success_stats = recent_tasks.aggregate(
-        average_success_ratio=Avg('success_ratio'),
-        stddev_success_ratio=StdDev('success_ratio')
-    )
-
-    avg_success_ratio = success_stats['average_success_ratio']
-    stddev_success_ratio = success_stats['stddev_success_ratio']
-
-    operators_with_z_scores = recent_tasks.annotate(
-        z_score=(F('success_ratio') - avg_success_ratio) / stddev_success_ratio
-    )
-    for operator in operators_with_z_scores:
-        print(operator)
-    
-    z_score_threshold = -1
-    blacklisted_operators = operators_with_z_scores.filter(
-        z_score__lte=z_score_threshold,
-        total_tasks__gte=5
-    ).values_list(
-        'provider__payment_addresses__golem.com.payment.platform.erc20-mainnet-glm.address', flat=True
-    ).distinct()
-
-    return list(blacklisted_operators)
 
 @api.get("/blacklisted-providers", response=List[str])
 def blacklisted_providers(request):
-    now = timezone.now()
-
-    # Subquery to get the most recent tasks for each provider
-    recent_tasks = TaskCompletion.objects.filter(
-        provider=OuterRef('node_id')
-    ).order_by('-timestamp')
-
-    # Annotate each provider with its most recent tasks
-    providers_with_tasks = Provider.objects.annotate(
-        recent_task=Subquery(recent_tasks.values('is_successful')[:1])
-    )
-
-    # Filter providers whose most recent task was a failure
-    failed_providers = providers_with_tasks.filter(recent_task=False)
-
-    blacklisted_providers = []
-    for provider in failed_providers:
-        consecutive_failures = TaskCompletion.objects.filter(
-            provider=provider.node_id,
-            is_successful=False,
-            timestamp__gte=now - timedelta(days=3)  # Assuming we look at the last 3 days
-        ).count()
-
-        # Apply a cap to the consecutive_failures
-        max_consecutive_failures = 6  # Maximum failures to keep backoff within 14 days
-        effective_failures = min(consecutive_failures, max_consecutive_failures)
-
-        backoff_hours = 10 * (2 ** (effective_failures - 1))  # Exponential backoff formula
-        next_eligible_date = provider.taskcompletion_set.latest('timestamp').timestamp + timedelta(hours=backoff_hours)
-
-        if now < next_eligible_date:
-            blacklisted_providers.append(provider.node_id)
-
-    return blacklisted_providers
-
+    rejected_providers = BlacklistedProvider.objects.all().values('provider__node_id')
+    rejected_providers_list = list(rejected_providers)
+    return rejected_providers_list
 
 @api.post("/task/start",  auth=AuthBearer())
 def start_task(request, payload: TaskCreateSchema):

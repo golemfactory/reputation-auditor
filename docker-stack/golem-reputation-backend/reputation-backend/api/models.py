@@ -27,6 +27,16 @@ class Offer(models.Model):
     accepted = models.BooleanField(default=False)
     reason = models.CharField(max_length=255, blank=True, null=True)  # Reason for rejection
 
+class BlacklistedOperator(models.Model):
+    wallet = models.CharField(max_length=255, unique=True)  # Payment address
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    reason = models.CharField(max_length=255, blank=True, null=True)  # Reason for blacklisting
+
+class BlacklistedProvider(models.Model):
+    provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  # Link to a Provider
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    reason = models.CharField(max_length=255, blank=True, null=True)  # Reason for blacklisting
+
 
 class DiskBenchmark(models.Model):
     provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  
