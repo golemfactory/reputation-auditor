@@ -237,8 +237,10 @@ def blacklisted_operators(request):
 @api.get("/blacklisted-providers", response=List[str])
 def blacklisted_providers(request):
     rejected_providers = BlacklistedProvider.objects.all().values('provider__node_id')
-    rejected_providers_list = list(rejected_providers)
-    return rejected_providers_list
+    # Extracting just the provider__node_id field from each object
+    rejected_node_ids_list = [provider['provider__node_id'] for provider in rejected_providers]
+    return rejected_node_ids_list
+
 
 @api.post("/task/start",  auth=AuthBearer())
 def start_task(request, payload: TaskCreateSchema):
