@@ -90,7 +90,6 @@ from django.db.models import Count, Q
 from datetime import timedelta
 from django.utils import timezone
 from .scoring import calculate_uptime, get_normalized_cpu_scores
-from .blacklist import get_blacklisted_providers, get_blacklisted_operators
 
 @app.task(queue='default', options={'queue': 'default', 'routing_key': 'default'})
 def update_provider_scores(network):
@@ -264,14 +263,12 @@ def get_blacklisted_operators():
         ))
     )
 
-    print(f"Found {len(eligible_providers_with_performance)} eligible providers with performance data")
     blacklisted_addr = set()
     deviation_threshold = 0.20
     for provider in eligible_providers_with_performance:
         multi_deviation = (provider.stddev_eps_multi / provider.avg_eps_multi) if provider.stddev_eps_multi else 0
         single_deviation = (provider.stddev_eps_single / provider.avg_eps_single) if provider.stddev_eps_single else 0
         payment_address = provider.payment_addresses.get('golem.com.payment.platform.erc20-mainnet-glm.address')
-        print(f"Payment address: {payment_address}, multi_deviation: {multi_deviation}, single_deviation: {single_deviation}")
         if (multi_deviation > deviation_threshold or single_deviation > deviation_threshold):
             if not payment_address in blacklisted_addr:
                 blacklisted_addr.add(payment_address)

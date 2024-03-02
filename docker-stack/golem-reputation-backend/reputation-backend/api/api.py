@@ -21,6 +21,7 @@ from ninja.security import HttpBearer
 import os
 
 
+
 class AuthBearer(HttpBearer):
     def authenticate(self, request, token):
         if token == os.environ.get("BACKEND_API_TOKEN"):
@@ -224,7 +225,6 @@ from datetime import timedelta
 from django.db.models import Count, Avg, StdDev, FloatField, Q, Subquery, OuterRef, F
 from django.db.models.functions import Cast
 from .models import BlacklistedOperator, BlacklistedProvider
-from .blacklist import get_blacklisted_operators, get_blacklisted_providers
 @api.get("/blacklisted-operators", response=List[str])
 def blacklisted_operators(request):
     rejected_operators = BlacklistedOperator.objects.all().values('wallet')
