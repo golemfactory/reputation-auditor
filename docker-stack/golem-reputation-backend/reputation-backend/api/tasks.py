@@ -171,7 +171,7 @@ def get_blacklisted_operators():
     BlacklistedOperator.objects.all().delete()
     now = timezone.now()
     recent_tasks = TaskCompletion.objects.filter(
-        timestamp__gte=now - timedelta(days=30)
+        timestamp__gte=now - timedelta(days=3)
     ).annotate(
         payment_address=F('provider__payment_addresses__golem_com_payment_platform_erc20_mainnet_glm_address')
     ).values('payment_address').annotate(

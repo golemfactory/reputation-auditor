@@ -113,35 +113,36 @@ def get_benchmark(request, node_id: str):
     if not provider:
         return {"detail": "Provider not found"}
 
-    benchmarks = []
+    single_benchmarks = CpuBenchmark.objects.filter(
+        provider=provider, benchmark_name="CPU Single-thread Benchmark"
+    ).order_by('-created_at')
 
-    single_benchmark = CpuBenchmark.objects.filter(
-        provider=provider, benchmark_name="CPU Single-thread Benchmark").order_by('-created_at').first()
-    multi_benchmark = CpuBenchmark.objects.filter(
-        provider=provider, benchmark_name="CPU Multi-thread Benchmark").order_by('-created_at').first()
+    multi_benchmarks = CpuBenchmark.objects.filter(
+        provider=provider, benchmark_name="CPU Multi-thread Benchmark"
+    ).order_by('-created_at')
 
-    if single_benchmark and multi_benchmark:
-        benchmarks.append(BenchmarkSchema(
-            timestamp=int(single_benchmark.created_at.timestamp()),
-            singleThread=single_benchmark.events_per_second,
-            multiThread=multi_benchmark.events_per_second
-        ))
+    benchmarks = [
+        BenchmarkSchema(
+            timestamp=int(bench.created_at.timestamp()),
+            singleThread=bench.events_per_second if bench.benchmark_name == "CPU Single-thread Benchmark" else None,
+            multiThread=bench.events_per_second if bench.benchmark_name == "CPU Multi-thread Benchmark" else None
+        ) for bench in single_benchmarks.union(multi_benchmarks)
+    ]
 
-    avg_dev_single = CpuBenchmark.objects.filter(benchmark_name="CPU Single-thread Benchmark").aggregate(
-        Avg('events_per_second'), StdDev('events_per_second'))
-    avg_dev_multi = CpuBenchmark.objects.filter(benchmark_name="CPU Multi-thread Benchmark").aggregate(
-        Avg('events_per_second'), StdDev('events_per_second'))
+    def calculate_deviation(benchmark_name):
+        avg_dev = CpuBenchmark.objects.filter(provider=provider, benchmark_name=benchmark_name).aggregate(
+            Avg('events_per_second'), StdDev('events_per_second'))
+        return (avg_dev['events_per_second__stddev'] / avg_dev['events_per_second__avg'] * 100
+                if avg_dev['events_per_second__avg'] and avg_dev['events_per_second__stddev'] else None)
 
-    single_deviation = (avg_dev_single['events_per_second__stddev'] / avg_dev_single['events_per_second__avg']) * 100 if avg_dev_single['events_per_second__avg'] else 0
-    multi_deviation = (avg_dev_multi['events_per_second__stddev'] / avg_dev_multi['events_per_second__avg']) * 100 if avg_dev_multi['events_per_second__avg'] else 0
+    single_deviation = calculate_deviation("CPU Single-thread Benchmark")
+    multi_deviation = calculate_deviation("CPU Multi-thread Benchmark")
 
-    response = BenchmarkResponse(
+    return BenchmarkResponse(
         benchmarks=benchmarks,
-        singleDeviation=single_deviation,
-        multiDeviation=multi_deviation
+        singleDeviation=single_deviation or 0,
+        multiDeviation=multi_deviation or 0
     )
-
-    return response
 
 from .schemas import MemoryBenchmarkResponse, SequentialBenchmarkSchema, RandomBenchmarkSchema
 @api.get("/memory/benchmark/{node_id}", response=MemoryBenchmarkResponse)
@@ -150,52 +151,57 @@ def get_memory_benchmark(request, node_id: str):
     if not provider:
         return {"detail": "Provider not found"}
 
-    sequential_benchmarks, random_benchmarks = [], []
+    seq_write_benches = MemoryBenchmark.objects.filter(
+        provider=provider, benchmark_name="Sequential_Write_Performance__Single_Thread_"
+    ).order_by('-created_at')
 
-    benchmarks = {
-        "Sequential_Write_Performance__Single_Thread_": None,
-        "Sequential_Read_Performance__Single_Thread_": None,
-        "Random_Write_Performance__Multi_threaded_": None,
-        "Random_Read_Performance__Multi_threaded_": None
-    }
+    seq_read_benches = MemoryBenchmark.objects.filter(
+        provider=provider, benchmark_name="Sequential_Read_Performance__Single_Thread_"
+    ).order_by('-created_at')
 
-    for bm_name in benchmarks.keys():
-        benchmarks[bm_name] = MemoryBenchmark.objects.filter(
-            provider=provider, benchmark_name=bm_name).order_by('-created_at').first()
+    rand_write_benches = MemoryBenchmark.objects.filter(
+        provider=provider, benchmark_name="Random_Write_Performance__Multi_threaded_"
+    ).order_by('-created_at')
 
-    if benchmarks["Sequential_Write_Performance__Single_Thread_"] and benchmarks["Sequential_Read_Performance__Single_Thread_"]:
-        sequential_benchmarks.append(SequentialBenchmarkSchema(
-            timestamp=int(benchmarks["Sequential_Write_Performance__Single_Thread_"].created_at.timestamp()),
-            writeSingleThread=benchmarks["Sequential_Write_Performance__Single_Thread_"].throughput_mi_b_sec,
-            readSingleThread=benchmarks["Sequential_Read_Performance__Single_Thread_"].throughput_mi_b_sec
-        ))
+    rand_read_benches = MemoryBenchmark.objects.filter(
+        provider=provider, benchmark_name="Random_Read_Performance__Multi_threaded_"
+    ).order_by('-created_at')
 
-    if benchmarks["Random_Write_Performance__Multi_threaded_"] and benchmarks["Random_Read_Performance__Multi_threaded_"]:
-        random_benchmarks.append(RandomBenchmarkSchema(
-            timestamp=int(benchmarks["Random_Write_Performance__Multi_threaded_"].created_at.timestamp()),
-            writeMultiThread=benchmarks["Random_Write_Performance__Multi_threaded_"].throughput_mi_b_sec,
-            readMultiThread=benchmarks["Random_Read_Performance__Multi_threaded_"].throughput_mi_b_sec
-        ))
+    sequential_benchmarks = [
+        SequentialBenchmarkSchema(
+            timestamp=int(bench.created_at.timestamp()),
+            writeSingleThread=bench.throughput_mi_b_sec if "Write" in bench.benchmark_name else None,
+            readSingleThread=bench.throughput_mi_b_sec if "Read" in bench.benchmark_name else None
+        ) for bench in (seq_write_benches | seq_read_benches).distinct()
+    ]
 
-    deviation_fields = {
-        "sequentialWriteDeviation": "Sequential_Write_Performance__Single_Thread_",
-        "sequentialReadDeviation": "Sequential_Read_Performance__Single_Thread_",
-        "randomWriteDeviation": "Random_Write_Performance__Multi_threaded_",
-        "randomReadDeviation": "Random_Read_Performance__Multi_threaded_"
-    }
-    deviations = {field: calculate_deviation(bm_name) for field, bm_name in deviation_fields.items()}
+    random_benchmarks = [
+        RandomBenchmarkSchema(
+            timestamp=int(bench.created_at.timestamp()),
+            writeMultiThread=bench.throughput_mi_b_sec if "Write" in bench.benchmark_name else None,
+            readMultiThread=bench.throughput_mi_b_sec if "Read" in bench.benchmark_name else None
+        ) for bench in (rand_write_benches | rand_read_benches).distinct()
+    ]
+
+    def calculate_deviation(benchmark_name):
+        avg_dev = MemoryBenchmark.objects.filter(provider=provider, benchmark_name=benchmark_name).aggregate(
+            Avg('throughput_mi_b_sec'), StdDev('throughput_mi_b_sec'))
+        return (avg_dev['throughput_mi_b_sec__stddev'] / avg_dev['throughput_mi_b_sec__avg'] * 100
+                if avg_dev['throughput_mi_b_sec__avg'] and avg_dev['throughput_mi_b_sec__stddev'] else None)
+
+    deviations = {field: calculate_deviation(bm_name) for field, bm_name in
+                  {
+                      "sequentialWriteDeviation": "Sequential_Write_Performance__Single_Thread_",
+                      "sequentialReadDeviation": "Sequential_Read_Performance__Single_Thread_",
+                      "randomWriteDeviation": "Random_Write_Performance__Multi_threaded_",
+                      "randomReadDeviation": "Random_Read_Performance__Multi_threaded_"
+                  }.items()}
 
     return MemoryBenchmarkResponse(
         sequentialBenchmarks=sequential_benchmarks,
         randomBenchmarks=random_benchmarks,
         **deviations
     )
-
-def calculate_deviation(benchmark_name):
-    avg_dev = MemoryBenchmark.objects.filter(benchmark_name=benchmark_name).aggregate(
-        Avg('throughput_mi_b_sec'), StdDev('throughput_mi_b_sec'))
-    deviation = (avg_dev['throughput_mi_b_sec__stddev'] / avg_dev['throughput_mi_b_sec__avg']) * 100 if avg_dev['throughput_mi_b_sec__avg'] else None
-    return deviation
 
 from .schemas import DiskBenchmarkResponse, SequentialDiskBenchmarkSchema, RandomDiskBenchmarkSchema
 
@@ -207,37 +213,36 @@ def get_disk_benchmark(request, node_id: str):
     if not provider:
         return {"detail": "Provider not found"}
 
-    benches = {
-        "FileIO_seqrd": DiskBenchmark.objects.filter(
-            provider=provider, benchmark_name="FileIO_seqrd").order_by('-created_at').first(),
-        "FileIO_seqwr": DiskBenchmark.objects.filter(
-            provider=provider, benchmark_name="FileIO_seqwr").order_by('-created_at').first(),
-        "FileIO_rndrd": DiskBenchmark.objects.filter(
-            provider=provider, benchmark_name="FileIO_rndrd").order_by('-created_at').first(),
-        "FileIO_rndwr": DiskBenchmark.objects.filter(
-            provider=provider, benchmark_name="FileIO_rndwr").order_by('-created_at').first(),
-    }
+    seq_benches = DiskBenchmark.objects.filter(
+        provider=provider, benchmark_name__in=["FileIO_seqrd", "FileIO_seqwr"]
+    ).order_by('-created_at')
 
-    sequentialDiskBenchmarks, randomDiskBenchmarks = [], []
+    rand_benches = DiskBenchmark.objects.filter(
+        provider=provider, benchmark_name__in=["FileIO_rndrd", "FileIO_rndwr"]
+    ).order_by('-created_at')
 
-    if benches["FileIO_seqrd"] and benches["FileIO_seqwr"]:
-        sequentialDiskBenchmarks = [SequentialDiskBenchmarkSchema(
-            timestamp=int(benches["FileIO_seqrd"].created_at.timestamp()),
-            readThroughput=benches["FileIO_seqrd"].read_throughput_mb_ps,
-            writeThroughput=benches["FileIO_seqwr"].write_throughput_mb_ps
-        )]
+    sequentialDiskBenchmarks = [
+        SequentialDiskBenchmarkSchema(
+            timestamp=int(bench.created_at.timestamp()),
+            readThroughput=bench.read_throughput_mb_ps if "seqrd" in bench.benchmark_name else None,
+            writeThroughput=bench.write_throughput_mb_ps if "seqwr" in bench.benchmark_name else None
+        )
+        for bench in seq_benches
+    ]
 
-    if benches["FileIO_rndrd"] and benches["FileIO_rndwr"]:
-        randomDiskBenchmarks = [RandomDiskBenchmarkSchema(
-            timestamp=int(benches["FileIO_rndrd"].created_at.timestamp()),
-            readThroughput=benches["FileIO_rndrd"].read_throughput_mb_ps,
-            writeThroughput=benches["FileIO_rndwr"].write_throughput_mb_ps
-        )]
+    randomDiskBenchmarks = [
+        RandomDiskBenchmarkSchema(
+            timestamp=int(bench.created_at.timestamp()),
+            readThroughput=bench.read_throughput_mb_ps if "rndrd" in bench.benchmark_name else None,
+            writeThroughput=bench.write_throughput_mb_ps if "rndwr" in bench.benchmark_name else None
+        )
+        for bench in rand_benches
+    ]
 
     def calculate_disk_deviation(provider, benchmark_name):
         avg_dev = DiskBenchmark.objects.filter(provider=provider, benchmark_name=benchmark_name).aggregate(
             Avg('read_throughput_mb_ps'), StdDev('read_throughput_mb_ps'))
-        return (avg_dev['read_throughput_mb_ps__stddev'] / avg_dev['read_throughput_mb_ps__avg'] * 100 
+        return (avg_dev['read_throughput_mb_ps__stddev'] / avg_dev['read_throughput_mb_ps__avg'] * 100
                 if avg_dev['read_throughput_mb_ps__avg'] and avg_dev['read_throughput_mb_ps__stddev'] else None)
 
     deviations = {field: calculate_disk_deviation(provider, bm_name) for field, bm_name in
