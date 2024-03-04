@@ -141,7 +141,7 @@ def update_provider_scores(network):
         response_v1["untestedProviders"].append(untested_info)
         response_v2["untestedProviders"].append(untested_info)
 
-    rejected_providers = BlacklistedProvider.objects.all().values('provider__node_id', 'reason')
+    rejected_providers = BlacklistedProvider.objects.all().values('providerId', 'reason')
     rejected_operators = BlacklistedOperator.objects.all().values('wallet', 'reason')
 
 # Convert QuerySets to a list of dictionaries
