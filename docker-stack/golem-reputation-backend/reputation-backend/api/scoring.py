@@ -112,10 +112,6 @@ def get_normalized_cpu_scores():
     max_single_thread_eps = CpuBenchmark.objects.filter(benchmark_name="CPU Single-thread Benchmark").aggregate(Max('events_per_second'))['events_per_second__max']
     max_multi_thread_eps = CpuBenchmark.objects.filter(benchmark_name="CPU Multi-thread Benchmark").aggregate(Max('events_per_second'))['events_per_second__max']
 
-    # Calculate average performance for single-thread and multi-thread
-    avg_single_thread_eps = CpuBenchmark.objects.filter(benchmark_name="CPU Single-thread Benchmark").aggregate(Avg('events_per_second'))['events_per_second__avg']
-    avg_multi_thread_eps = CpuBenchmark.objects.filter(benchmark_name="CPU Multi-thread Benchmark").aggregate(Avg('events_per_second'))['events_per_second__avg']
-
     cpu_scores = {}
 
     # Function to determine penalty weight based on deviation
@@ -129,12 +125,21 @@ def get_normalized_cpu_scores():
 
     # Query for each provider
     for provider in Provider.objects.all():
-        single_thread_score_obj = CpuBenchmark.objects.filter(provider=provider, benchmark_name="CPU Single-thread Benchmark").first()
-        multi_thread_score_obj = CpuBenchmark.objects.filter(provider=provider, benchmark_name="CPU Multi-thread Benchmark").first()
+        # Get the latest 5 benchmarks for single and multi thread for each provider
+        latest_single_thread_benchmarks = CpuBenchmark.objects.filter(provider=provider, benchmark_name="CPU Single-thread Benchmark").order_by('-id')[:5]
+        latest_multi_thread_benchmarks = CpuBenchmark.objects.filter(provider=provider, benchmark_name="CPU Multi-thread Benchmark").order_by('-id')[:5]
 
-        # Calculate deviations
-        single_thread_deviation = abs(single_thread_score_obj.events_per_second - avg_single_thread_eps) / avg_single_thread_eps * 100 if single_thread_score_obj else 0
-        multi_thread_deviation = abs(multi_thread_score_obj.events_per_second - avg_multi_thread_eps) / avg_multi_thread_eps * 100 if multi_thread_score_obj else 0
+        # Calculate average performance for the latest 5 benchmarks
+        avg_latest_single_thread_eps = latest_single_thread_benchmarks.aggregate(Avg('events_per_second'))['events_per_second__avg'] if latest_single_thread_benchmarks else 0
+        avg_latest_multi_thread_eps = latest_multi_thread_benchmarks.aggregate(Avg('events_per_second'))['events_per_second__avg'] if latest_multi_thread_benchmarks else 0
+
+        single_thread_score_obj = latest_single_thread_benchmarks.first()
+        multi_thread_score_obj = latest_multi_thread_benchmarks.first()
+
+        # Calculate deviations based on the latest 5 benchmark averages
+        single_thread_deviation = abs(single_thread_score_obj.events_per_second - avg_latest_single_thread_eps) / avg_latest_single_thread_eps * 100 if single_thread_score_obj and avg_latest_single_thread_eps else 0
+        multi_thread_deviation = abs(multi_thread_score_obj.events_per_second - avg_latest_multi_thread_eps) / avg_latest_multi_thread_eps * 100 if multi_thread_score_obj and avg_latest_multi_thread_eps else 0
+
         # Apply penalty weights
         single_thread_penalty_weight = penalty_weight(single_thread_deviation)
         multi_thread_penalty_weight = penalty_weight(multi_thread_deviation)
