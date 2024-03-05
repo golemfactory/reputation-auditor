@@ -154,6 +154,8 @@ def update_provider_scores(network):
     for provider in rejected_providers:
         total_blacklist_count += 1
 
+    mainnet_online_provider_count = Provider.objects.filter(network="mainnet", node_id__in=online_provider_ids).count()
+    testnet_online_provider_count = Provider.objects.filter(network="testnet", node_id__in=online_provider_ids).count()
 # Convert QuerySets to a list of dictionaries
     rejected_providers_list = list(rejected_providers)
     rejected_operators_list = list(rejected_operators)
@@ -161,10 +163,12 @@ def update_provider_scores(network):
     response_v1["rejectedOperators"] = rejected_operators_list
     response_v2["rejectedProviders"] = rejected_providers_list
     response_v2["rejectedOperators"] = rejected_operators_list
-    response_v1["totalRejectedProviders"] = total_blacklist_count
-    response_v2["totalRejectedProviders"] = total_blacklist_count
-    response_v2["totalOnlineProviders"] = len(response_v2["providers"]) + len(response_v2["untestedProviders"])
-    response_v1["totalOnlineProviders"] = len(response_v1["providers"]) + len(response_v1["untestedProviders"])
+    response_v1["totalRejectedProvidersMainnet"] = total_blacklist_count
+    response_v2["totalRejectedProvidersMainnet"] = total_blacklist_count
+    response_v1["totalOnlineProvidersMainnet"] = mainnet_online_provider_count
+    response_v1["totalOnlineProvidersTestnet"] = testnet_online_provider_count
+    response_v2["totalOnlineProvidersMainnet"] = mainnet_online_provider_count
+    response_v2["totalOnlineProvidersTestnet"] = testnet_online_provider_count
     r.set(f'provider_scores_v1_{network}', json.dumps(response_v1))
     r.set(f'provider_scores_v2_{network}', json.dumps(response_v2))
 
