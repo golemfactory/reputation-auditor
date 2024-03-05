@@ -144,6 +144,16 @@ def update_provider_scores(network):
     rejected_providers = BlacklistedProvider.objects.all().annotate(providerId=F('provider_id')).values('providerId', 'reason')
     rejected_operators = BlacklistedOperator.objects.all().values('wallet', 'reason')
 
+
+    blacklisted_operators_wallets = list(BlacklistedOperator.objects.values_list('wallet', flat=True))
+    total_blacklist_count = 0
+    for wallet in blacklisted_operators_wallets:
+        key = f"golem.com.payment.platform.erc20-mainnet-glm.address"
+        total_blacklist_count += Provider.objects.filter(payment_addresses__has_key=key, payment_addresses__contains={key: wallet}, node_id__in=online_provider_ids).count()
+    
+    for provider in rejected_providers:
+        total_blacklist_count += 1
+
 # Convert QuerySets to a list of dictionaries
     rejected_providers_list = list(rejected_providers)
     rejected_operators_list = list(rejected_operators)
@@ -151,6 +161,10 @@ def update_provider_scores(network):
     response_v1["rejectedOperators"] = rejected_operators_list
     response_v2["rejectedProviders"] = rejected_providers_list
     response_v2["rejectedOperators"] = rejected_operators_list
+    response_v1["totalRejectedProviders"] = total_blacklist_count
+    response_v2["totalRejectedProviders"] = total_blacklist_count
+    response_v2["totalOnlineProviders"] = len(response_v2["providers"]) + len(response_v2["untestedProviders"])
+    response_v1["totalOnlineProviders"] = len(response_v1["providers"]) + len(response_v1["untestedProviders"])
     r.set(f'provider_scores_v1_{network}', json.dumps(response_v1))
     r.set(f'provider_scores_v2_{network}', json.dumps(response_v2))
 
@@ -316,3 +330,5 @@ def get_blacklisted_providers():
             BlacklistedProvider.objects.create(provider=provider, reason=f"Consecutive failures: {consecutive_failures}. Next eligible date: {next_eligible_date}")
 
     return blacklisted_providers
+
+
