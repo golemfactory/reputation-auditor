@@ -3,33 +3,6 @@ volumes:
     db_data: {}
     pgadmin:
 services:
-    pgadmin:
-        image: dpage/pgadmin4
-        links:
-            - postgres
-        depends_on:
-            - postgres
-        env_file:
-            - ./.envs/.pgadmin
-        volumes:
-            - pgadmin:/var/lib/pgadmin
-        deploy:
-            labels:
-                - traefik.enable=true
-                - "traefik.http.routers.pgadmin.rule=Host(`${LOCALHOST_IP}`)"
-                - traefik.http.routers.pgadmin.entrypoints=webinternal
-                - traefik.http.services.pgadmin.loadbalancer.server.port=80
-                - traefik.http.routers.pgadmin.service=pgadmin@docker
-                - traefik.docker.network=reputation
-            replicas: 1
-            update_config:
-                parallelism: 1
-                failure_action: rollback
-                delay: 10s
-            restart_policy:
-                condition: on-failure
-        networks:
-            - reputation
     traefik:
         image: traefik:latest
         ports:
@@ -132,7 +105,7 @@ services:
             - reputation
     uptime_worker:
         command:
-            ["/bin/sh", "-c", "/wait-for-it.sh postgres:5432 -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q uptime -c 1"]
+            ["/bin/sh", "-c", "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q uptime -c 1"]
         image: ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:latest
         env_file:
             - ./.envs/.django
@@ -157,7 +130,7 @@ services:
             [
                 "/bin/sh",
                 "-c",
-                "/wait-for-it.sh postgres:5432 -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q benchmarker -c 1",
+                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q benchmarker -c 1",
             ]
         image: ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:latest
         env_file:
@@ -183,7 +156,7 @@ services:
             - reputation
     ping_worker:
         command:
-            ["/bin/sh", "-c", "/wait-for-it.sh postgres:5432 -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q pinger -c 1"]
+            ["/bin/sh", "-c", "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q pinger -c 1"]
         image: ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:latest
         env_file:
             - ./.envs/.django
@@ -208,7 +181,7 @@ services:
             [
                 "/bin/sh",
                 "-c",
-                "/wait-for-it.sh postgres:5432 -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q pingerp2p -c 1",
+                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q pingerp2p -c 1",
             ]
         image: ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:latest
         env_file:
@@ -246,22 +219,7 @@ services:
                 condition: on-failure
         networks:
             - reputation
-    postgres:
-        image: postgres:13.4-alpine
-        env_file:
-            - ./.envs/.db
-        volumes:
-            - "db_data:/var/lib/postgresql/data"
-        networks:
-            - reputation
-        deploy:
-            replicas: 1
-            update_config:
-                parallelism: 1
-                failure_action: rollback
-                delay: 10s
-            restart_policy:
-                condition: on-failure
+
 networks:
     reputation:
         driver: overlay
