@@ -147,8 +147,36 @@ def update_provider_scores(network):
         response_v1["untestedProviders"].append(untested_info)
         response_v2["untestedProviders"].append(untested_info_v2)
 
-    rejected_providers = BlacklistedProvider.objects.all().annotate(providerId=F('provider_id')).values('providerId', 'reason')
-    rejected_operators = BlacklistedOperator.objects.all().values('wallet', 'reason')
+    rejected_providers_v2 = BlacklistedProvider.objects.select_related('provider').annotate(
+        providerId=F('provider_id'),
+        name=F('provider__name'),  # Adjust these field lookups based on your actual model relationships
+        walletAddress=F('provider__payment_addresses__golem.com.payment.platform.erc20-mainnet-glm.address')
+    ).values('providerId', 'name', 'walletAddress', 'reason')
+
+    rejected_providers_list = [
+        {
+            "provider": {
+                "id": provider["providerId"],
+                "name": provider["name"],
+                "walletAddress": provider["walletAddress"],
+                "reason": provider["reason"]
+            }
+        } 
+        for provider in rejected_providers_v2
+    ]
+    rejected_operators_v2 = BlacklistedOperator.objects.all().values('wallet', 'reason')
+    rejected_operators_list = [
+        {
+            "operator": {
+                "walletAddress": operator["wallet"],
+                "reason": operator["reason"]
+            }
+        } 
+        for operator in rejected_operators_v2
+    ]
+
+    rejected_providers_v1 = BlacklistedProvider.objects.all().annotate(providerId=F('provider_id')).values('providerId', 'reason')
+    rejected_operators_v1 = BlacklistedOperator.objects.all().values('wallet', 'reason')
 
 
     blacklisted_operators_wallets = list(BlacklistedOperator.objects.values_list('wallet', flat=True))
@@ -157,16 +185,14 @@ def update_provider_scores(network):
         key = f"golem.com.payment.platform.erc20-mainnet-glm.address"
         total_blacklist_count += Provider.objects.filter(payment_addresses__has_key=key, payment_addresses__contains={key: wallet}, node_id__in=online_provider_ids).count()
     
-    for provider in rejected_providers:
+    for provider in rejected_providers_v2:
         total_blacklist_count += 1
 
     mainnet_online_provider_count = Provider.objects.filter(network="mainnet", node_id__in=online_provider_ids).count()
     testnet_online_provider_count = Provider.objects.filter(network="testnet", node_id__in=online_provider_ids).count()
 # Convert QuerySets to a list of dictionaries
-    rejected_providers_list = list(rejected_providers)
-    rejected_operators_list = list(rejected_operators)
-    response_v1["rejectedProviders"] = rejected_providers_list
-    response_v1["rejectedOperators"] = rejected_operators_list
+    response_v1["rejectedProviders"] = list(rejected_providers_v1)
+    response_v1["rejectedOperators"] = list(rejected_operators_v1)
     response_v2["rejectedProviders"] = rejected_providers_list
     response_v2["rejectedOperators"] = rejected_operators_list
     response_v1["totalRejectedProvidersMainnet"] = total_blacklist_count
