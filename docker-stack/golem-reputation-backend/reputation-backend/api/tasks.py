@@ -159,8 +159,8 @@ def update_provider_scores(network):
                 "id": provider["providerId"],
                 "name": provider["name"],
                 "walletAddress": provider["walletAddress"],
-                "reason": provider["reason"]
-            }
+            },
+            "reason": provider["reason"]
         } 
         for provider in rejected_providers_v2
     ]
@@ -169,8 +169,10 @@ def update_provider_scores(network):
         {
             "operator": {
                 "walletAddress": operator["wallet"],
-                "reason": operator["reason"]
-            }
+                
+            },
+            "reason": operator["reason"]
+
         } 
         for operator in rejected_operators_v2
     ]
