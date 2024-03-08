@@ -102,7 +102,7 @@ def update_provider_scores(network):
         total_count=Count('taskcompletion', filter=Q(taskcompletion__timestamp__gte=ten_days_ago)),
     ).all()
     response_v1 = {"providers": [], "untestedProviders": []}
-    response_v2 = {"providers": [], "untestedProviders": []}
+    response_v2 = {"testedProviders": [], "untestedProviders": []}
     cpu_scores = get_normalized_cpu_scores()
     for provider in providers:
         if provider.total_count > 0:
@@ -118,7 +118,7 @@ def update_provider_scores(network):
             }
 
             provider_info_v2 = {
-                **provider_info_v1,
+                "provider": {'id': provider.node_id, 'name': provider.name, 'walletAddress': provider.payment_addresses.get('golem.com.payment.platform.erc20-mainnet-glm.address')},
                 "scores": {
                     **provider_info_v1["scores"],
                     "cpuSingleThreadScore": cpu_scores[provider.node_id]["single_thread_score"],
@@ -127,7 +127,7 @@ def update_provider_scores(network):
             }
 
             response_v1["providers"].append(provider_info_v1)
-            response_v2["providers"].append(provider_info_v2)
+            response_v2["testedProviders"].append(provider_info_v2)
 
     providers_with_no_tasks = Provider.objects.filter(node_id__in=online_provider_ids, taskcompletion__isnull=True, network=network)
     for provider in providers_with_no_tasks:
@@ -138,8 +138,14 @@ def update_provider_scores(network):
                 "uptime": uptime_percentage / 100,
             }
         }
+        untested_info_v2 = {
+            "provider": {'id': provider.node_id, 'name': provider.name, 'walletAddress': provider.payment_addresses.get('golem.com.payment.platform.erc20-mainnet-glm.address')},
+            "scores": {
+                "uptime": uptime_percentage / 100,
+            }
+        }
         response_v1["untestedProviders"].append(untested_info)
-        response_v2["untestedProviders"].append(untested_info)
+        response_v2["untestedProviders"].append(untested_info_v2)
 
     rejected_providers = BlacklistedProvider.objects.all().annotate(providerId=F('provider_id')).values('providerId', 'reason')
     rejected_operators = BlacklistedOperator.objects.all().values('wallet', 'reason')
