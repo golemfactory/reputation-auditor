@@ -326,7 +326,7 @@ def get_blacklisted_operators():
                 blacklisted_addr.add(payment_address)
                 BlacklistedOperator.objects.create(
                     wallet=payment_address,
-                    reason=f"CPU benchmark deviation: multi={multi_deviation:.2f}, single={single_deviation:.2f} over threshold {deviation_threshold}."
+                    reason=f"CPU benchmark deviation: multi={multi_deviation:.2f}, single={single_deviation:.2f} over threshold {deviation_threshold}. Possibly overprovisioned."
                 )
 
 @app.task
