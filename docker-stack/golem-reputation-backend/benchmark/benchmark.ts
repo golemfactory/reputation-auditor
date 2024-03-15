@@ -75,7 +75,6 @@ const benchmarkTest = async (ctx: any, node_id: string, testName: string, script
 
     for (const filePath of filePaths) {
         const performanceData = await ctx.run(`cat /golem/work/${filePath}.json`)
-        console.log(`Performance data for ${testName} on node ${node_id}:`, performanceData)
         if (!performanceData.stdout) {
             await logAndSubmitFailure(node_id, `Benchmark ${testName}`, `No performance data for ${filePath}`, taskId)
             return false
@@ -137,7 +136,6 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
     const REQUEST_START_TIMEOUT_SEC = 90
 
     const manifest = await readFile("manifest.json")
-    console.log(manifest.toString("base64").length)
 
     const golem = new Golem({
         initTimeoutSec: 90,
@@ -206,13 +204,6 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
                                 error_message: "",
                                 task_id: Number(taskId),
                             })
-                            console.log(`Provider ${providerId} finished the benchmarking successfully, submitting task status with data`, {
-                                node_id: providerId,
-                                task_name: "Full benchmark suite",
-                                is_successful: true,
-                                error_message: "",
-                                task_id: Number(taskId),
-                            })
                         }
 
                         return {
@@ -234,14 +225,6 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
                             failedProvidersIds.push(providerId)
                             // Submit task status only if the provider is not already blacklisted
                             taskStatuses.push({
-                                node_id: providerId,
-                                task_name: "Full benchmark suite",
-                                is_successful: false,
-                                error_message: "Provider hit the timeout limit",
-                                task_id: Number(taskId),
-                            })
-
-                            console.log(`Submitted failed task status for provider ${providerId} with data`, {
                                 node_id: providerId,
                                 task_name: "Full benchmark suite",
                                 is_successful: false,
@@ -303,7 +286,6 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
         await golem.stop()
         await submitBulkBenchmark(accumulatedBenchmarkData)
         await bulkSubmitTaskStatuses(taskStatuses)
-        console.log
 
         console.log("Costs:")
         let bulkUpdates = []
