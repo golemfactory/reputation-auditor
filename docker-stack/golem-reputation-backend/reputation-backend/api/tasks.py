@@ -211,11 +211,12 @@ def update_provider_scores(network):
 from .models import Provider, TaskCompletion, BlacklistedOperator, BlacklistedProvider
 from django.utils import timezone
 from datetime import timedelta
-from django.db.models import Count, Avg, StdDev, FloatField, Q, Subquery, OuterRef, F, Case, When, Max
-from django.db.models.functions import Cast
+from django.db.models import Count, Avg, StdDev, FloatField, Q, Subquery, OuterRef, F, Case, When, Max, Value, FloatField
+from django.db.models.functions import Cast, Coalesce
 from datetime import timedelta
 from django.db.models import Subquery, OuterRef
 from django.db.models.fields.json import KeyTextTransform
+from .models import CpuBenchmark
 
 @app.task
 def get_blacklisted_operators():
@@ -252,9 +253,7 @@ def get_blacklisted_operators():
         'payment_address', flat=True
     ).distinct())
 
-    for payment_address in blacklisted_addr_success:
-        # Blacklist the Operator
-        BlacklistedOperator.objects.create(wallet=payment_address, reason=f"Task success ratio deviation: z-score={z_score_threshold}. Operator has significantly lower success ratio than the average.")
+    ## CPU benchmark deviation check
 
     latest_online_statuses = NodeStatusHistory.objects.annotate(
         latest=Max('timestamp', filter=Q(is_online=True))
@@ -292,42 +291,72 @@ def get_blacklisted_operators():
         provider.node_id for provider in providers_performance
         if provider.payment_addr in eligible_payment_addresses_set
     ]
-
-    # Re-fetch providers with performance annotations
-    eligible_providers_with_performance = Provider.objects.filter(
-        node_id__in=eligible_providers
-    ).annotate(
-        avg_eps_multi=Avg(Case(
-            When(cpubenchmark__benchmark_name="CPU Multi-thread Benchmark", then=F('cpubenchmark__events_per_second')),
-            output_field=FloatField()
-        )),
-        stddev_eps_multi=StdDev(Case(
-            When(cpubenchmark__benchmark_name="CPU Multi-thread Benchmark", then=F('cpubenchmark__events_per_second')),
-            output_field=FloatField()
-        )),
-        avg_eps_single=Avg(Case(
-            When(cpubenchmark__benchmark_name="CPU Single-thread Benchmark", then=F('cpubenchmark__events_per_second')),
-            output_field=FloatField()
-        )),
-        stddev_eps_single=StdDev(Case(
-            When(cpubenchmark__benchmark_name="CPU Single-thread Benchmark", then=F('cpubenchmark__events_per_second')),
-            output_field=FloatField()
-        ))
-    )
-
     blacklisted_addr = set()
     deviation_threshold = 0.20
-    for provider in eligible_providers_with_performance:
-        multi_deviation = (provider.stddev_eps_multi / provider.avg_eps_multi) if provider.stddev_eps_multi else 0
-        single_deviation = (provider.stddev_eps_single / provider.avg_eps_single) if provider.stddev_eps_single else 0
-        payment_address = provider.payment_addresses.get('golem.com.payment.platform.erc20-mainnet-glm.address')
-        if (multi_deviation > deviation_threshold or single_deviation > deviation_threshold):
-            if not payment_address in blacklisted_addr:
-                blacklisted_addr.add(payment_address)
-                BlacklistedOperator.objects.create(
-                    wallet=payment_address,
-                    reason=f"CPU benchmark deviation: multi={multi_deviation:.2f}, single={single_deviation:.2f} over threshold {deviation_threshold}. Possibly overprovisioned."
-                )
+        # Re-fetch providers with performance annotations and aggregate deviations per payment address
+    providers_performance = Provider.objects.filter(
+        payment_addresses__has_key='golem.com.payment.platform.erc20-mainnet-glm.address',
+        node_id__in=eligible_providers
+    ).annotate(
+        payment_addr=KeyTextTransform('golem.com.payment.platform.erc20-mainnet-glm.address', 'payment_addresses')
+    )
+
+    provider_deviations = {}
+    for provider in providers_performance:
+        three_days_ago = timezone.now() - timedelta(days=3)
+
+        # Filter benchmarks from the last 3 days for a specific provider
+        benchmarks = CpuBenchmark.objects.filter(provider=provider, created_at__gte=three_days_ago)
+        deviations = []
+        for benchmark in benchmarks:
+            if benchmark.benchmark_name == "CPU Multi-thread Benchmark":
+                avg_eps_multi = benchmarks.filter(benchmark_name="CPU Multi-thread Benchmark").aggregate(Avg('events_per_second'))['events_per_second__avg']
+                stddev_eps_multi = benchmarks.filter(benchmark_name="CPU Multi-thread Benchmark").aggregate(StdDev('events_per_second'))['events_per_second__stddev']
+                deviation_multi = (stddev_eps_multi / avg_eps_multi) if stddev_eps_multi else 0
+                deviations.append(deviation_multi)
+            elif benchmark.benchmark_name == "CPU Single-thread Benchmark":
+                avg_eps_single = benchmarks.filter(benchmark_name="CPU Single-thread Benchmark").aggregate(Avg('events_per_second'))['events_per_second__avg']
+                stddev_eps_single = benchmarks.filter(benchmark_name="CPU Single-thread Benchmark").aggregate(StdDev('events_per_second'))['events_per_second__stddev']
+                deviation_single = (stddev_eps_single / avg_eps_single) if stddev_eps_single else 0
+                deviations.append(deviation_single)
+
+        print(f"Operator {provider.payment_addr} has deviations: {deviations}")
+        avg_deviation = sum(deviations) / len(deviations) if deviations else 0
+        provider_deviations[provider.payment_addr] = avg_deviation
+
+    deviation_threshold = 0.20
+    deviation_blacklist = []
+    for payment_address, deviation in provider_deviations.items():
+        print(f"Operator {payment_address} has average deviation of {deviation:.2f}")
+        if deviation > deviation_threshold:
+            # Add the address and reason to the blacklist
+            deviation_blacklist.append({
+                'payment_address': payment_address,
+                'reason': f"CPU benchmark aggregate deviation: {deviation:.2f} over threshold {deviation_threshold}."
+            })
+
+            
+            print(f"Blacklisting operator with payment address: {payment_address}")
+
+    # Clear the existing blacklisted operators
+    BlacklistedOperator.objects.all().delete()
+    print(f"Deviation blacklist: {deviation_blacklist}")
+    # Blacklist opearators with low success ratio
+    for payment_address in blacklisted_addr_success:
+    
+        BlacklistedOperator.objects.create(wallet=payment_address, reason=f"Task success ratio deviation: z-score={z_score_threshold}. Operator has significantly lower success ratio than the average.")
+
+    # Blacklist operators with high CPU benchmark deviations
+    for operator in deviation_blacklist:
+        
+        blacklisted_operator, created = BlacklistedOperator.objects.get_or_create(
+            wallet=operator['payment_address'],
+            defaults={'reason': operator['reason']}
+        )
+        if created:
+            print(f"New BlacklistedOperator created for {payment_address}")
+        else:
+            print(f"BlacklistedOperator already exists for {payment_address}, no new entry created.")
 
 @app.task
 def get_blacklisted_providers():
