@@ -3,6 +3,15 @@ from .models import CpuBenchmark, MemoryBenchmark, DiskBenchmark, NetworkBenchma
 from datetime import timedelta
 from django.utils import timezone
 
+# Function to determine penalty weight based on deviation
+def penalty_weight(deviation):
+    if deviation <= 5:
+        return 1.0  # No penalty
+    elif 5 < deviation <= 15:
+        return 0.7  # Small penalty
+    else:
+        return 0.4  # Larger penalty
+
 def calculate_uptime(provider_id):
     provider = Provider.objects.get(node_id=provider_id)
     statuses = NodeStatusHistory.objects.filter(provider=provider).order_by('timestamp')
@@ -114,14 +123,7 @@ def get_normalized_cpu_scores():
 
     cpu_scores = {}
 
-    # Function to determine penalty weight based on deviation
-    def penalty_weight(deviation):
-        if deviation <= 5:
-            return 1.0  # No penalty
-        elif 5 < deviation <= 15:
-            return 0.7  # Small penalty
-        else:
-            return 0.4  # Larger penalty
+
 
     # Query for each provider
     for provider in Provider.objects.all():

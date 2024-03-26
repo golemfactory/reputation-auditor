@@ -219,8 +219,8 @@ from django.db.models.fields.json import KeyTextTransform
 
 @app.task
 def get_blacklisted_operators():
-    # Clear the existing blacklisted providers
-    BlacklistedOperator.objects.all().delete()
+    blacklist = []
+    
     now = timezone.now()
     recent_tasks = TaskCompletion.objects.filter(
         timestamp__gte=now - timedelta(days=3)
@@ -254,7 +254,11 @@ def get_blacklisted_operators():
 
     for payment_address in blacklisted_addr_success:
         # Blacklist the Operator
-        BlacklistedOperator.objects.create(wallet=payment_address, reason=f"Task success ratio deviation: z-score={z_score_threshold}. Operator has significantly lower success ratio than the average.")
+        blacklist.append({
+            "wallet": payment_address,
+            "reason": f"Task success ratio deviation: z-score={z_score_threshold}. Operator has significantly lower success ratio than the average."
+        
+        })
 
     latest_online_statuses = NodeStatusHistory.objects.annotate(
         latest=Max('timestamp', filter=Q(is_online=True))
@@ -324,10 +328,24 @@ def get_blacklisted_operators():
         if (multi_deviation > deviation_threshold or single_deviation > deviation_threshold):
             if not payment_address in blacklisted_addr:
                 blacklisted_addr.add(payment_address)
-                BlacklistedOperator.objects.create(
-                    wallet=payment_address,
-                    reason=f"CPU benchmark deviation: multi={multi_deviation:.2f}, single={single_deviation:.2f} over threshold {deviation_threshold}. Possibly overprovisioned."
-                )
+                blacklist.append({
+                    "wallet": payment_address,
+                    "reason": f"CPU benchmark deviation: multi={multi_deviation:.2f}, single={single_deviation:.2f} over threshold {deviation_threshold}. Possibly overprovisioned."
+                })
+               
+    new_wallets = {operator['wallet'] for operator in blacklist}
+
+    # Update existing entries and add new ones
+    for operator in blacklist:
+        obj, created = BlacklistedOperator.objects.update_or_create(
+            wallet=operator['wallet'],
+            defaults={'reason': operator['reason']},
+        )
+
+    # Find and delete any blacklisted operators not in the new list
+    BlacklistedOperator.objects.exclude(wallet__in=new_wallets).delete()
+
+
 
 @app.task
 def get_blacklisted_providers():

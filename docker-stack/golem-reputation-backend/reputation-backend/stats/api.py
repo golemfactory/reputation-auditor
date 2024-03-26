@@ -1,12 +1,9 @@
 from ninja import NinjaAPI, Path
-from api.models import Provider, TaskCompletion, MemoryBenchmark, DiskBenchmark, CpuBenchmark
-from .schemas import ResponseSchema
-from django.db.models import Avg, Max, Min, F, Q, StdDev
-from datetime import timedelta
+from api.models import Provider, TaskCompletion, MemoryBenchmark, DiskBenchmark, CpuBenchmark, NetworkBenchmark, Offer
+from .schemas import OfferHistorySchema, TaskParticipationSchema, ProviderDetailsResponseSchema
+from typing import List
 from django.utils import timezone
-from collections import defaultdict
-from typing import Optional
-
+from api.scoring import penalty_weight
 
 
 api = NinjaAPI(
@@ -16,243 +13,295 @@ api = NinjaAPI(
     urls_namespace="stats",
 )
 
-
-@api.get("/tasks/{provider_id}", response=ResponseSchema)
-def get_tasks_for_provider(request, provider_id: str = Path(...)):
-    try:
-        provider = Provider.objects.get(node_id=provider_id)
-    except Provider.DoesNotExist:
-        return api.create_response(request, {"message": "Provider not found"}, status=404)
-
-    tasks = TaskCompletion.objects.filter(provider=provider).order_by('-timestamp')
-
-    total_tasks = tasks.count()
-    successful_tasks = tasks.filter(is_successful=True).count()
-    success_ratio = (successful_tasks / total_tasks * 100) if total_tasks > 0 else 0
-
-    response_data = {
-        "successRatio": success_ratio,
-        "tasks": [{
-            "date": task.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-            "successful": task.is_successful,
-            "taskName": task.task_name,
-            "errorMessage": task.error_message or ""
-        } for task in tasks]
-    }
-
-    return response_data
+def get_summary(deviation):
+    if deviation <= 5:
+        return "stable"
+    elif deviation <= 15:
+        return "varying"
+    return "unstable"
 
 
-def calculate_deviation_for_benchmarks(benchmark_queryset, benchmark_name_field, score_field):
-    results = defaultdict(dict)
-    for benchmark in benchmark_queryset:
-        benchmark_name = getattr(benchmark, benchmark_name_field)
-        max_score = benchmark_queryset.filter(**{benchmark_name_field: benchmark_name}).aggregate(Max(score_field))[f'{score_field}__max']
-        min_score = benchmark_queryset.filter(**{benchmark_name_field: benchmark_name}).aggregate(Min(score_field))[f'{score_field}__min']
-        
-        if max_score and min_score and max_score != 0:
-            deviation = ((max_score - min_score) / max_score) * 100
-        else:
-            deviation = None
-        
-        results[benchmark_name]["deviation"] = deviation
-        results[benchmark_name]["latest_score"] = getattr(benchmark, score_field)
-    
-    return results
 
-@api.get("/provider/{node_id}/detailed_performance_deviation")
-def provider_detailed_performance_deviation(request, node_id: str = Path(...)):
-    three_days_ago = timezone.now() - timedelta(days=3)
-    provider = Provider.objects.get(node_id=node_id)
-    results = {}
-
-    # Memory Benchmark Deviation and Latest Score
-    memory_benchmarks = MemoryBenchmark.objects.filter(provider=provider, created_at__gte=three_days_ago)
-    memory_results = {}
-    for benchmark in memory_benchmarks:
-        benchmark_scores = MemoryBenchmark.objects.filter(provider=provider, benchmark_name=benchmark.benchmark_name, created_at__gte=three_days_ago).values_list('throughput_mi_b_sec', flat=True)
-        max_score = max(benchmark_scores, default=0)
-        min_score = min(benchmark_scores, default=0)
-        deviation = ((max_score - min_score) / max_score) * 100 if max_score != 0 else 0
-        memory_results[benchmark.benchmark_name] = {"deviation": deviation, "latest_score": benchmark.throughput_mi_b_sec}
-    results['memory_deviation'] = memory_results
-
-    # Disk Benchmark Deviation and Latest Score
-    disk_benchmarks = DiskBenchmark.objects.filter(provider=provider, created_at__gte=three_days_ago)
-    disk_results = {}
-    for benchmark in disk_benchmarks:
-        benchmark_scores = DiskBenchmark.objects.filter(provider=provider, benchmark_name=benchmark.benchmark_name, created_at__gte=three_days_ago).values_list('reads_per_second', 'writes_per_second')
-        max_score = max(max(scores) for scores in benchmark_scores) if benchmark_scores else 0
-        min_score = min(min(scores) for scores in benchmark_scores) if benchmark_scores else 0
-        deviation = ((max_score - min_score) / max_score) * 100 if max_score != 0 else 0
-        disk_results[benchmark.benchmark_name] = {"reads_deviation": deviation, "latest_reads": benchmark.reads_per_second, "writes_deviation": deviation, "latest_writes": benchmark.writes_per_second}
-    results['disk_deviation'] = disk_results
-
-    # CPU Benchmark Deviation and Latest Score
-    cpu_benchmarks = CpuBenchmark.objects.filter(provider=provider, created_at__gte=three_days_ago)
-    print(cpu_benchmarks)
-    cpu_results = {}
-    for benchmark in cpu_benchmarks:
-        benchmark_scores = CpuBenchmark.objects.filter(provider=provider, benchmark_name=benchmark.benchmark_name, created_at__gte=three_days_ago).values_list('events_per_second', flat=True)
-        max_score = max(benchmark_scores, default=0)
-        min_score = min(benchmark_scores, default=0)
-        deviation = ((max_score - min_score) / max_score) * 100 if max_score != 0 else 0
-        cpu_results[benchmark.benchmark_name] = {"deviation": deviation, "latest_score": benchmark.events_per_second}
-    results['cpu_deviation'] = cpu_results
-
-    return results
+def calculate_deviation(scores):
+    if not scores:
+        return 0
+    avg = sum(scores) / len(scores)
+    deviation_percent = sum((score - avg) ** 2 for score in scores) ** 0.5 / len(scores) ** 0.5 / avg * 100
+    return deviation_percent
 
 
 
 
-from .schemas import BenchmarkResponse, BenchmarkSchema
 
-@api.get("/benchmark/{node_id}", response=BenchmarkResponse)
+from django.db.models import Avg, StdDev
+from django.db.models import Case, When, Value, CharField
+from django.db.models.functions import Cast
+from django.db.models import Value as V
+from django.db.models import FloatField
+from django.http import JsonResponse
+
+
+@api.get("/benchmark/cpu/{node_id}")
 def get_benchmark(request, node_id: str):
     provider = Provider.objects.filter(node_id=node_id).first()
     if not provider:
-        return {"detail": "Provider not found"}
-
-    single_benchmarks = CpuBenchmark.objects.filter(
-        provider=provider, benchmark_name="CPU Single-thread Benchmark"
-    ).order_by('-created_at')
-
-    multi_benchmarks = CpuBenchmark.objects.filter(
-        provider=provider, benchmark_name="CPU Multi-thread Benchmark"
-    ).order_by('-created_at')
-
-    benchmarks = [
-        BenchmarkSchema(
-            timestamp=int(bench.created_at.timestamp()),
-            singleThread=bench.events_per_second if bench.benchmark_name == "CPU Single-thread Benchmark" else None,
-            multiThread=bench.events_per_second if bench.benchmark_name == "CPU Multi-thread Benchmark" else None
-        ) for bench in single_benchmarks.union(multi_benchmarks)
-    ]
-
-    def calculate_deviation(benchmark_name):
-        avg_dev = CpuBenchmark.objects.filter(provider=provider, benchmark_name=benchmark_name).aggregate(
-            Avg('events_per_second'), StdDev('events_per_second'))
-        return (avg_dev['events_per_second__stddev'] / avg_dev['events_per_second__avg'] * 100
-                if avg_dev['events_per_second__avg'] and avg_dev['events_per_second__stddev'] else None)
-
-    single_deviation = calculate_deviation("CPU Single-thread Benchmark")
-    multi_deviation = calculate_deviation("CPU Multi-thread Benchmark")
-
-    return BenchmarkResponse(
-        benchmarks=benchmarks,
-        singleDeviation=single_deviation or 0,
-        multiDeviation=multi_deviation or 0
+        return JsonResponse({"detail": "Provider not found"}, status=404)
+    
+    benchmarks = CpuBenchmark.objects.filter(provider=provider).values(
+        'benchmark_name', 'events_per_second', 'created_at'
     )
+    result = {"data": {"single": [], "multi": []}, "singleDeviation": 0, "multiDeviation": 0, "summary": ""}
+    single_scores, multi_scores = [], []
 
-from .schemas import MemoryBenchmarkResponse, SequentialBenchmarkSchema, RandomBenchmarkSchema
-@api.get("/memory/benchmark/{node_id}", response=MemoryBenchmarkResponse)
-def get_memory_benchmark(request, node_id: str):
+    for benchmark in benchmarks:
+        score_entry = {"score": benchmark['events_per_second'], "timestamp": benchmark['created_at'].timestamp()}
+        if "Single-thread" in benchmark['benchmark_name']:
+            result["data"]["single"].append(score_entry)
+            single_scores.append(benchmark['events_per_second'])
+        else:
+            result["data"]["multi"].append(score_entry)
+            multi_scores.append(benchmark['events_per_second'])
+
+
+    result['singleDeviation'] = calculate_deviation(single_scores)
+    result['multiDeviation'] = calculate_deviation(multi_scores)
+
+
+
+    result['summary'] = {
+        "single": get_summary(result['singleDeviation']),
+        "multi": get_summary(result['multiDeviation'])
+    }
+
+    return JsonResponse(result)
+
+
+@api.get("/benchmark/memory/seq/single/{node_id}")
+def get_seq_memory_benchmark(request, node_id: str):
     provider = Provider.objects.filter(node_id=node_id).first()
     if not provider:
-        return {"detail": "Provider not found"}
+        return JsonResponse({"detail": "Provider not found"}, status=404)
+    
+    benchmarks = MemoryBenchmark.objects.filter(
+        provider=provider, 
+        benchmark_name__in=[
+            "Sequential_Write_Performance__Single_Thread_", 
+            "Sequential_Read_Performance__Single_Thread_"
+        ]).values('benchmark_name', 'throughput_mi_b_sec', 'created_at')
 
-    seq_write_benches = MemoryBenchmark.objects.filter(
-        provider=provider, benchmark_name="Sequential_Write_Performance__Single_Thread_"
-    ).order_by('-created_at')
+    result = {"data": {"sequential_write_single": [], "sequential_read_single": []}, "writeDeviation": 0, "readDeviation": 0, "summary": ""}
+    write_scores, read_scores = [], []
+    
+    for benchmark in benchmarks:
+        score_entry = {"score": benchmark['throughput_mi_b_sec'], "timestamp": benchmark['created_at'].timestamp()}
+        if "Write" in benchmark['benchmark_name']:
+            result["data"]["sequential_write_single"].append(score_entry)
+            write_scores.append(benchmark['throughput_mi_b_sec'])
+        else:
+            result["data"]["sequential_read_single"].append(score_entry)
+            read_scores.append(benchmark['throughput_mi_b_sec'])
 
-    seq_read_benches = MemoryBenchmark.objects.filter(
-        provider=provider, benchmark_name="Sequential_Read_Performance__Single_Thread_"
-    ).order_by('-created_at')
+    result['writeDeviation'] = calculate_deviation(write_scores)
+    result['readDeviation'] = calculate_deviation(read_scores)
 
-    rand_write_benches = MemoryBenchmark.objects.filter(
-        provider=provider, benchmark_name="Random_Write_Performance__Multi_threaded_"
-    ).order_by('-created_at')
+    result['summary'] = {
+        "sequential_write_single": get_summary(result['writeDeviation']),
+        "sequential_read_single": get_summary(result['readDeviation'])
+    }
+    
+    return JsonResponse(result)
 
-    rand_read_benches = MemoryBenchmark.objects.filter(
-        provider=provider, benchmark_name="Random_Read_Performance__Multi_threaded_"
-    ).order_by('-created_at')
 
-    sequential_benchmarks = [
-        SequentialBenchmarkSchema(
-            timestamp=int(bench.created_at.timestamp()),
-            writeSingleThread=bench.throughput_mi_b_sec if "Write" in bench.benchmark_name else None,
-            readSingleThread=bench.throughput_mi_b_sec if "Read" in bench.benchmark_name else None
-        ) for bench in (seq_write_benches | seq_read_benches).distinct()
-    ]
-
-    random_benchmarks = [
-        RandomBenchmarkSchema(
-            timestamp=int(bench.created_at.timestamp()),
-            writeMultiThread=bench.throughput_mi_b_sec if "Write" in bench.benchmark_name else None,
-            readMultiThread=bench.throughput_mi_b_sec if "Read" in bench.benchmark_name else None
-        ) for bench in (rand_write_benches | rand_read_benches).distinct()
-    ]
-
-    def calculate_deviation(benchmark_name):
-        avg_dev = MemoryBenchmark.objects.filter(provider=provider, benchmark_name=benchmark_name).aggregate(
-            Avg('throughput_mi_b_sec'), StdDev('throughput_mi_b_sec'))
-        return (avg_dev['throughput_mi_b_sec__stddev'] / avg_dev['throughput_mi_b_sec__avg'] * 100
-                if avg_dev['throughput_mi_b_sec__avg'] and avg_dev['throughput_mi_b_sec__stddev'] else None)
-
-    deviations = {field: calculate_deviation(bm_name) for field, bm_name in
-                  {
-                      "sequentialWriteDeviation": "Sequential_Write_Performance__Single_Thread_",
-                      "sequentialReadDeviation": "Sequential_Read_Performance__Single_Thread_",
-                      "randomWriteDeviation": "Random_Write_Performance__Multi_threaded_",
-                      "randomReadDeviation": "Random_Read_Performance__Multi_threaded_"
-                  }.items()}
-
-    return MemoryBenchmarkResponse(
-        sequentialBenchmarks=sequential_benchmarks,
-        randomBenchmarks=random_benchmarks,
-        **deviations
-    )
-
-from .schemas import DiskBenchmarkResponse, SequentialDiskBenchmarkSchema, RandomDiskBenchmarkSchema
-
-from django.db.models import Avg, StdDev
-
-@api.get("/disk/benchmark/{node_id}", response=DiskBenchmarkResponse)
-def get_disk_benchmark(request, node_id: str):
+@api.get("/benchmark/memory/rand/multi/{node_id}")
+def get_rand_memory_benchmark(request, node_id: str):
     provider = Provider.objects.filter(node_id=node_id).first()
     if not provider:
-        return {"detail": "Provider not found"}
+        return JsonResponse({"detail": "Provider not found"}, status=404)
 
-    seq_benches = DiskBenchmark.objects.filter(
-        provider=provider, benchmark_name__in=["FileIO_seqrd", "FileIO_seqwr"]
-    ).order_by('-created_at')
+    benchmarks = MemoryBenchmark.objects.filter(
+        provider=provider, 
+        benchmark_name__in=[
+            "Random_Write_Performance__Multi_threaded_", 
+            "Random_Read_Performance__Multi_threaded_"
+        ]).values('benchmark_name', 'throughput_mi_b_sec', 'created_at')
 
-    rand_benches = DiskBenchmark.objects.filter(
-        provider=provider, benchmark_name__in=["FileIO_rndrd", "FileIO_rndwr"]
-    ).order_by('-created_at')
+    result = {
+        "data": {
+            "random_write_multi": [], 
+            "random_read_multi": []
+        }, 
+        "writeDeviation": 0, 
+        "readDeviation": 0, 
+        "summary": ""
+    }
+    write_scores, read_scores = [], []
 
-    sequentialDiskBenchmarks = [
-        SequentialDiskBenchmarkSchema(
-            timestamp=int(bench.created_at.timestamp()),
-            readThroughput=bench.read_throughput_mb_ps if "seqrd" in bench.benchmark_name else None,
-            writeThroughput=bench.write_throughput_mb_ps if "seqwr" in bench.benchmark_name else None
-        )
-        for bench in seq_benches
-    ]
+    for benchmark in benchmarks:
+        score_entry = {"score": benchmark['throughput_mi_b_sec'], "timestamp": benchmark['created_at'].timestamp()}
+        if "Write" in benchmark['benchmark_name']:
+            result["data"]["random_write_multi"].append(score_entry)
+            write_scores.append(benchmark['throughput_mi_b_sec'])
+        else:
+            result["data"]["random_read_multi"].append(score_entry)
+            read_scores.append(benchmark['throughput_mi_b_sec'])
 
-    randomDiskBenchmarks = [
-        RandomDiskBenchmarkSchema(
-            timestamp=int(bench.created_at.timestamp()),
-            readThroughput=bench.read_throughput_mb_ps if "rndrd" in bench.benchmark_name else None,
-            writeThroughput=bench.write_throughput_mb_ps if "rndwr" in bench.benchmark_name else None
-        )
-        for bench in rand_benches
-    ]
+    result['writeDeviation'] = calculate_deviation(write_scores)
+    result['readDeviation'] = calculate_deviation(read_scores)
 
-    def calculate_disk_deviation(provider, benchmark_name):
-        avg_dev = DiskBenchmark.objects.filter(provider=provider, benchmark_name=benchmark_name).aggregate(
-            Avg('read_throughput_mb_ps'), StdDev('read_throughput_mb_ps'))
-        return (avg_dev['read_throughput_mb_ps__stddev'] / avg_dev['read_throughput_mb_ps__avg'] * 100
-                if avg_dev['read_throughput_mb_ps__avg'] and avg_dev['read_throughput_mb_ps__stddev'] else None)
+    result['summary'] = {
+        "random_write_multi": get_summary(result['writeDeviation']),
+        "random_read_multi": get_summary(result['readDeviation'])
+    }
+    
+    return JsonResponse(result)
 
-    deviations = {field: calculate_disk_deviation(provider, bm_name) for field, bm_name in
-                  {"sequentialReadDeviation": "FileIO_seqrd",
-                   "sequentialWriteDeviation": "FileIO_seqwr",
-                   "randomReadDeviation": "FileIO_rndrd",
-                   "randomWriteDeviation": "FileIO_rndwr"}.items()}
+@api.get("/benchmark/disk/fileio_rand/{node_id}")
+def get_fileio_disk_benchmark(request, node_id: str):
+    provider = Provider.objects.filter(node_id=node_id).first()
+    if not provider:
+        return JsonResponse({"detail": "Provider not found"}, status=404)
 
-    return DiskBenchmarkResponse(
-        sequentialDiskBenchmarks=sequentialDiskBenchmarks,
-        randomDiskBenchmarks=randomDiskBenchmarks,
-        **deviations
+    benchmarks = DiskBenchmark.objects.filter(
+        provider=provider, 
+        benchmark_name__in=["FileIO_rndrd", "FileIO_rndwr"]
+    ).values('benchmark_name', 'read_throughput_mb_ps', 'write_throughput_mb_ps', 'created_at')
+
+    result = {
+        "data": {
+            "fileio_rndrd": [], 
+            "fileio_rndwr": []
+        }, 
+        "readDeviation": 0, 
+        "writeDeviation": 0, 
+        "summary": ""
+    }
+    read_scores, write_scores = [], []
+
+    for benchmark in benchmarks:
+        if "rndrd" in benchmark['benchmark_name']:
+            score_entry = {"score": benchmark['read_throughput_mb_ps'], "timestamp": benchmark['created_at'].timestamp()}
+            result["data"]["fileio_rndrd"].append(score_entry)
+            read_scores.append(benchmark['read_throughput_mb_ps'])
+        else:
+            score_entry = {"score": benchmark['write_throughput_mb_ps'], "timestamp": benchmark['created_at'].timestamp()}
+            result["data"]["fileio_rndwr"].append(score_entry)
+            write_scores.append(benchmark['write_throughput_mb_ps'])
+
+    result['readDeviation'] = calculate_deviation(read_scores)
+    result['writeDeviation'] = calculate_deviation(write_scores)
+
+    result['summary'] = {
+        "fileio_rndrd": get_summary(result['readDeviation']),
+        "fileio_rndwr": get_summary(result['writeDeviation'])
+    }
+    
+    return JsonResponse(result)
+
+@api.get("/benchmark/disk/fileio_seq/{node_id}")
+def get_fileio_seq_disk_benchmark(request, node_id: str):
+    provider = Provider.objects.filter(node_id=node_id).first()
+    if not provider:
+        return JsonResponse({"detail": "Provider not found"}, status=404)
+
+    benchmarks = DiskBenchmark.objects.filter(
+        provider=provider, 
+        benchmark_name__in=["FileIO_seqrd", "FileIO_seqwr"]
+    ).values('benchmark_name', 'read_throughput_mb_ps', 'write_throughput_mb_ps', 'created_at')
+
+    result = {
+        "data": {
+            "fileio_seqrd": [], 
+            "fileio_seqwr": []
+        }, 
+        "readDeviation": 0, 
+        "writeDeviation": 0, 
+        "summary": ""
+    }
+    read_scores, write_scores = [], []
+
+    for benchmark in benchmarks:
+        if "seqrd" in benchmark['benchmark_name']:
+            score_entry = {"score": benchmark['read_throughput_mb_ps'], "timestamp": benchmark['created_at'].timestamp()}
+            result["data"]["fileio_seqrd"].append(score_entry)
+            read_scores.append(benchmark['read_throughput_mb_ps'])
+        else:
+            score_entry = {"score": benchmark['write_throughput_mb_ps'], "timestamp": benchmark['created_at'].timestamp()}
+            result["data"]["fileio_seqwr"].append(score_entry)
+            write_scores.append(benchmark['write_throughput_mb_ps'])
+
+    result['readDeviation'] = calculate_deviation(read_scores)
+    result['writeDeviation'] = calculate_deviation(write_scores)
+
+    result['summary'] = {
+        "fileio_seqrd": get_summary(result['readDeviation']),
+        "fileio_seqwr": get_summary(result['writeDeviation'])
+    }
+    
+    return JsonResponse(result)
+
+@api.get("/benchmark/network/{node_id}")
+def get_network_benchmark(request, node_id: str):
+    provider = Provider.objects.filter(node_id=node_id).first()
+    if not provider:
+        return JsonResponse({"detail": "Provider not found"}, status=404)
+
+    benchmarks = NetworkBenchmark.objects.filter(provider=provider).values(
+        'mbit_per_second', 'created_at'
+    )
+
+    scores = [benchmark['mbit_per_second'] for benchmark in benchmarks]
+
+    result = {
+        "data": [{"score": benchmark['mbit_per_second'], "timestamp": benchmark['created_at'].timestamp()} for benchmark in benchmarks],
+        "deviation": calculate_deviation(scores),
+        "summary": get_summary(calculate_deviation(scores))
+    }
+    
+    return JsonResponse(result)
+
+from collections import defaultdict
+
+@api.get("/provider/{node_id}/details", response={200: ProviderDetailsResponseSchema})
+def get_provider_details(request, node_id: str):
+    provider = Provider.objects.filter(node_id=node_id).first()
+    if not provider:
+        return api.create_response(request, {"detail": "Provider not found"}, status=404)
+
+    offers = Offer.objects.filter(provider=provider).select_related('task').order_by('-created_at')
+
+    task_acceptance = {offer.task_id: offer.accepted for offer in offers if offer.accepted}
+
+    task_participation = []
+    for task_id, accepted in task_acceptance.items():
+        try:
+            completion = TaskCompletion.objects.get(task_id=task_id, provider=provider)
+            task_participation.append(
+                TaskParticipationSchema(
+                    task_id=task_id,
+                    task_name=completion.task.name,
+                    task_started_at=int(completion.task.started_at.timestamp()),  # Use started_at
+                    completion_status="Completed Successfully" if completion.is_successful else "Failed",
+                    error_message=completion.error_message if not completion.is_successful else None,
+                    cost=completion.cost
+                )
+            )
+
+        except TaskCompletion.DoesNotExist:
+            if accepted:
+                offer = offers.filter(task_id=task_id).first()
+                task_name = offer.task.name
+                task_participation.append(
+                    TaskParticipationSchema(
+                        task_id=task_id,
+                        task_name=task_name,
+                        task_started_at=int(offer.task.started_at.timestamp()),  # Use started_at
+                        completion_status="Accepted but not completed. Unknown reason",
+                        error_message=None,
+                        cost=None
+                    )
+                )
+
+    return ProviderDetailsResponseSchema(
+        offer_history=[],  # Populate as needed
+        task_participation=task_participation
     )
