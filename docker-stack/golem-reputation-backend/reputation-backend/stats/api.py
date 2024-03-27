@@ -269,37 +269,38 @@ def get_provider_details(request, node_id: str):
 
     offers = Offer.objects.filter(provider=provider).select_related('task').order_by('-created_at')
 
-    task_acceptance = {offer.task_id: offer.accepted for offer in offers if offer.accepted}
-
+    processed_tasks = set()
     task_participation = []
-    for task_id, accepted in task_acceptance.items():
-        try:
-            completion = TaskCompletion.objects.get(task_id=task_id, provider=provider)
-            task_participation.append(
-                TaskParticipationSchema(
-                    task_id=task_id,
-                    task_name=completion.task.name,
-                    task_started_at=int(completion.task.started_at.timestamp()),  # Use started_at
-                    completion_status="Completed Successfully" if completion.is_successful else "Failed",
-                    error_message=completion.error_message if not completion.is_successful else None,
-                    cost=completion.cost
-                )
-            )
 
-        except TaskCompletion.DoesNotExist:
-            if accepted:
-                offer = offers.filter(task_id=task_id).first()
-                task_name = offer.task.name
-                task_participation.append(
-                    TaskParticipationSchema(
-                        task_id=task_id,
-                        task_name=task_name,
-                        task_started_at=int(offer.task.started_at.timestamp()),  # Use started_at
-                        completion_status="Accepted but not completed. Unknown reason",
-                        error_message=None,
-                        cost=None
-                    )
-                )
+    for offer in offers:
+        if offer.task_id in processed_tasks:
+            continue
+        processed_tasks.add(offer.task_id)
+
+        task_entry = {
+            "task_id": offer.task_id,
+            "task_name": offer.task.name,
+            "task_started_at": int(offer.task.started_at.timestamp())
+        }
+
+        if offer.accepted:
+            try:
+                completion = TaskCompletion.objects.get(task_id=offer.task_id, provider=provider)
+                task_entry.update({
+                    "completion_status": "Completed Successfully" if completion.is_successful else "Failed",
+                    "error_message": completion.error_message if not completion.is_successful else None,
+                    "cost": completion.cost
+                })
+            except TaskCompletion.DoesNotExist:
+                task_entry["completion_status"] = "Accepted offer, but the task was not started. Reason unknown."
+        else:
+            task_entry.update({
+                "completion_status": "Offer Rejected",
+                "error_message": offer.reason,
+                "cost": None
+            })
+
+        task_participation.append(TaskParticipationSchema(**task_entry))
 
     return ProviderDetailsResponseSchema(
         offer_history=[],  # Populate as needed
