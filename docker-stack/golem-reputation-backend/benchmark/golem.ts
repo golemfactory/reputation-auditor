@@ -222,7 +222,7 @@ export class Golem {
         const allocation = await this.paymentService.createAllocation({
             // Hardcoded for now
             // budget: this.getBudgetEstimate(),
-            budget: 20,
+            budget: 30,
             expires: this.getExpectedDurationSeconds() * 1000,
         })
 
@@ -413,14 +413,14 @@ export class Golem {
             if (this.isFromDisallowedOperator(proposal)) {
                 console.log("Discarding proposal because it's from a disallowed operator")
                 accepted = false
-                reason = "from a disallowed operator"
+                reason = "Provider's wallet address is blacklisted."
             } else if (this.isFromDisallowedProvider(proposal)) {
                 accepted = false
-                reason = "from a disallowed provider"
+                reason = "Provider is blacklisted due to failures in the past."
             } else if (this.isOverpricedProvider(proposal.provider.id)) {
                 console.log("Discarding proposal because it's from an overpriced provider")
                 accepted = false
-                reason = "from an overpriced provider"
+                reason = "The provider's pricing falls outside our budget range."
             }
 
             // Send offer with the decision and reason
@@ -494,7 +494,7 @@ export class Golem {
         }
 
         // If the provider is not flagged as overpriced or within acceptable margin, it's not considered overpriced
-        console.log(`Provider ${providerId} does not meet the criteria for being deemed overpriced.`)
+        console.log(`Provider ${providerId} is not overpriced. Accepting the proposal.`)
         return false
     }
 }

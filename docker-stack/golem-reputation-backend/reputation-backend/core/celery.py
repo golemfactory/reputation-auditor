@@ -67,12 +67,6 @@ def setup_periodic_tasks(sender, **kwargs):
     #     options={"queue": "pingerp2p", "routing_key": "pingerp2p"},
     # )
     sender.add_periodic_task(
-        60 * 60 * randint(8, 12),
-        benchmark_providers_task.s(),
-        queue="benchmarker",
-        options={"queue": "benchmarker", "routing_key": "benchmarker"},
-    )
-    sender.add_periodic_task(
         30.0,
         process_offers_from_redis.s(),
         queue="default",

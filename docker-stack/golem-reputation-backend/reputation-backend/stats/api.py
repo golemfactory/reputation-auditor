@@ -279,8 +279,6 @@ def get_provider_details(request, node_id: str):
 
         task_entry = {
             "task_id": offer.task_id,
-            "task_name": offer.task.name,
-            "task_started_at": int(offer.task.started_at.timestamp())
         }
 
         if offer.accepted:
