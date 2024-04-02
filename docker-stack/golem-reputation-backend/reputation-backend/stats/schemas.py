@@ -9,8 +9,6 @@ class OfferHistorySchema(Schema):
 
 class TaskParticipationSchema(Schema):
     task_id: int
-    task_name: str
-    task_started_at: int  # Consider renaming for clarity
     completion_status: str
     error_message: Optional[str] = None
     cost: Optional[float] = None
