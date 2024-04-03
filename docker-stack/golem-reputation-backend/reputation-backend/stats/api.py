@@ -270,37 +270,38 @@ def get_provider_details(request, node_id: str):
     offers = Offer.objects.filter(provider=provider).select_related('task').order_by('-created_at')
 
     processed_tasks = set()
-    task_participation = []
+    task_participations = []
 
     for offer in offers:
         if offer.task_id in processed_tasks:
             continue
         processed_tasks.add(offer.task_id)
 
-        task_entry = {
-            "task_id": offer.task_id,
-        }
+        task_entry = TaskParticipationSchema(
+            task_id=offer.task_id,
+            completion_status="",
+            error_message=None,
+            cost=None
+        )
 
         if offer.accepted:
             try:
                 completion = TaskCompletion.objects.get(task_id=offer.task_id, provider=provider)
-                task_entry.update({
-                    "completion_status": "Completed Successfully" if completion.is_successful else "Failed",
-                    "error_message": completion.error_message if not completion.is_successful else None,
-                    "cost": completion.cost
-                })
+                task_entry.completion_status = "Completed Successfully" if completion.is_successful else "Failed"
+                task_entry.error_message = completion.error_message if not completion.is_successful else None
+                task_entry.cost = completion.cost
             except TaskCompletion.DoesNotExist:
-                task_entry["completion_status"] = "Accepted offer, but the task was not started. Reason unknown."
+                task_entry.completion_status = "Accepted offer, but the task was not started. Reason unknown."
         else:
-            task_entry.update({
-                "completion_status": "Offer Rejected",
-                "error_message": offer.reason,
-                "cost": None
-            })
+            task_entry.completion_status = "Offer Rejected"
+            task_entry.error_message = offer.reason
 
-        task_participation.append(TaskParticipationSchema(**task_entry))
+        task_participations.append(task_entry)
+
+    # Sort task_participations by 'task_id'
+    task_participations_sorted = sorted(task_participations, key=lambda x: x.task_id)
 
     return ProviderDetailsResponseSchema(
         offer_history=[],  # Populate as needed
-        task_participation=task_participation
+        task_participation=task_participations_sorted
     )
