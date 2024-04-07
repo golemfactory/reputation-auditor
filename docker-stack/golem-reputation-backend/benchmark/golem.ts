@@ -417,7 +417,7 @@ export class Golem {
             } else if (this.isFromDisallowedProvider(proposal)) {
                 accepted = false
                 reason = "Provider is blacklisted due to failures in the past."
-            } else if (this.isOverpricedProvider(proposal.provider.id)) {
+            } else if (this.isOverpricedProvider(proposal.provider.id, proposal)) {
                 console.log("Discarding proposal because it's from an overpriced provider")
                 accepted = false
                 reason = "The provider's pricing falls outside our budget range."
@@ -454,7 +454,7 @@ export class Golem {
     private isFromDisallowedProvider(proposal: Proposal) {
         return Boolean(this.config.market.withoutProviders?.includes(proposal.provider.id))
     }
-    private isOverpricedProvider(providerId: string): boolean {
+    private isOverpricedProvider(providerId: string, proposal: Proposal): boolean {
         const providerData = this.config.market.statsData?.find((provider: ProviderData) => provider.node_id === providerId)
 
         if (!providerData || !providerData.runtimes?.vm) {
@@ -462,6 +462,11 @@ export class Golem {
                 `Provider data or VM runtime information is missing for ${providerId}. Assuming provider is not verifiable, hence considering it overpriced.`
             )
             return true // Treat as overpriced if critical data is missing, aligning with cautious approach
+        }
+
+        if (proposal.pricing.start > 0) {
+            console.log(`Proposal from provider ${providerId} has a non-zero start price. Considered overpriced to protect the budget.`)
+            return true
         }
 
         const { is_overpriced, times_more_expensive, times_cheaper } = providerData.runtimes.vm
