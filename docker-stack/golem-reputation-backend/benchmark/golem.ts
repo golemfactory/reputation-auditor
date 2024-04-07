@@ -420,7 +420,7 @@ export class Golem {
             } else if (this.isOverpricedProvider(proposal.provider.id, proposal)) {
                 console.log("Discarding proposal because it's from an overpriced provider")
                 accepted = false
-                reason = "The provider's pricing falls outside our budget range."
+                reason = "The provider's pricing falls outside our budget range or has a non-zero start price."
             }
 
             // Send offer with the decision and reason
