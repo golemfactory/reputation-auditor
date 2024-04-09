@@ -67,7 +67,6 @@ def benchmark_providers_task():
         return rc
     except Exception as e:
         print(f"Error benchmarking providers: {e}")
-        benchmark_providers_task.retry(countdown=60)
 
 
 @app.task
