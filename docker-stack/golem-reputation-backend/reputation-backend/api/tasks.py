@@ -313,35 +313,50 @@ def get_blacklisted_operators():
     ]
 
     # Re-fetch providers with performance annotations
-    eligible_providers_with_performance = Provider.objects.filter(
-        node_id__in=eligible_providers
+    providers_with_recent_benchmarks = Provider.objects.filter(
+        node_id__in=eligible_providers  # Use the list of node IDs that passed initial eligibility
     ).annotate(
-        avg_eps_multi=Avg(Case(
-            When(cpubenchmark__benchmark_name="CPU Multi-thread Benchmark", then=F('cpubenchmark__events_per_second')),
-            output_field=FloatField()
-        )),
-        stddev_eps_multi=StdDev(Case(
-            When(cpubenchmark__benchmark_name="CPU Multi-thread Benchmark", then=F('cpubenchmark__events_per_second')),
-            output_field=FloatField()
-        )),
-        avg_eps_single=Avg(Case(
-            When(cpubenchmark__benchmark_name="CPU Single-thread Benchmark", then=F('cpubenchmark__events_per_second')),
-            output_field=FloatField()
-        )),
-        stddev_eps_single=StdDev(Case(
-            When(cpubenchmark__benchmark_name="CPU Single-thread Benchmark", then=F('cpubenchmark__events_per_second')),
-            output_field=FloatField()
-        ))
+        recent_benchmark_count=Count(
+            'cpubenchmark',
+            filter=Q(cpubenchmark__created_at__gte=now - timedelta(days=3))
+        )
+    ).filter(
+        recent_benchmark_count__gt=0  # Ensure there's at least one recent benchmark
+    )
+
+    # Calculate deviation for these providers
+    providers_with_deviation = providers_with_recent_benchmarks.annotate(
+        avg_eps_multi=Avg(
+            'cpubenchmark__events_per_second',
+            filter=Q(cpubenchmark__benchmark_name="CPU Multi-thread Benchmark",
+                    cpubenchmark__created_at__gte=now - timedelta(days=3))
+        ),
+        stddev_eps_multi=StdDev(
+            'cpubenchmark__events_per_second',
+            filter=Q(cpubenchmark__benchmark_name="CPU Multi-thread Benchmark",
+                    cpubenchmark__created_at__gte=now - timedelta(days=3))
+        ),
+        avg_eps_single=Avg(
+            'cpubenchmark__events_per_second',
+            filter=Q(cpubenchmark__benchmark_name="CPU Single-thread Benchmark",
+                    cpubenchmark__created_at__gte=now - timedelta(days=3))
+        ),
+        stddev_eps_single=StdDev(
+            'cpubenchmark__events_per_second',
+            filter=Q(cpubenchmark__benchmark_name="CPU Single-thread Benchmark",
+                    cpubenchmark__created_at__gte=now - timedelta(days=3))
+        )
     )
 
     blacklisted_addr = set()
     deviation_threshold = 0.20
-    for provider in eligible_providers_with_performance:
-        multi_deviation = (provider.stddev_eps_multi / provider.avg_eps_multi) if provider.stddev_eps_multi else 0
-        single_deviation = (provider.stddev_eps_single / provider.avg_eps_single) if provider.stddev_eps_single else 0
-        payment_address = provider.payment_addresses.get('golem.com.payment.platform.erc20-mainnet-glm.address')
-        if (multi_deviation > deviation_threshold or single_deviation > deviation_threshold):
-            if not payment_address in blacklisted_addr:
+    for provider in providers_with_deviation:
+        multi_deviation = provider.stddev_eps_multi / provider.avg_eps_multi if provider.avg_eps_multi else 0
+        single_deviation = provider.stddev_eps_single / provider.avg_eps_single if provider.avg_eps_single else 0
+
+        if multi_deviation > deviation_threshold or single_deviation > deviation_threshold:
+            payment_address = provider.payment_addresses.get('golem.com.payment.platform.erc20-mainnet-glm.address')
+            if payment_address not in blacklisted_addr:
                 blacklisted_addr.add(payment_address)
                 blacklist.append({
                     "wallet": payment_address,
