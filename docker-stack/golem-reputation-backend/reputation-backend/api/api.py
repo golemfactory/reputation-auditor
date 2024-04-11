@@ -340,35 +340,20 @@ def start_benchmark(request):
     return {"status": "ok"}
 
 
-from django.db.models import Sum, F
-from django.db.models.functions import Now
-from datetime import timedelta
-from django.db.models.expressions import Window
-from django.db.models.functions.window import PercentRank
-from .models import CpuBenchmark
+from .scoring import get_top_80_percent_cpu_multithread_providers
+
 
 @api.get("/whitelist")
-def get_top_80_percent_cpu_multithread_providers(request, n_days=3):
-    # Filter benchmarks based on the last N days and by multi-thread benchmark
-    recent_benchmarks = CpuBenchmark.objects.filter(
-        created_at__gte=Now() - timedelta(days=n_days),
-        benchmark_name__icontains='multi-thread'  # Adjust based on your actual naming
-    ).values('provider_id').annotate(
-        total_score=Sum('events_per_second')
-    ).order_by('-total_score')
-    
-    # Calculate the index for the 80th percentile cutoff
-    count = len(recent_benchmarks)
-    cutoff_index = int(count * 0.8) - 1  # Adjust the cutoff to get the top 80%
-
-    # Get the total scores as a list and find the cutoff score
-    total_scores = list(recent_benchmarks.values_list('total_score', flat=True))
-    if total_scores:  # Ensure the list is not empty
-        cutoff_score = total_scores[cutoff_index]
-
-        # Filter providers by score, comparing against the cutoff score
-        top_providers = [benchmark['provider_id'] for benchmark in recent_benchmarks if benchmark['total_score'] >= cutoff_score]
+def gnv_whitelist(request, paymentNetwork: str = 'polygon',topPercent=80, maxCheckedDaysAgo=3):
+    if paymentNetwork == 'polygon' or paymentNetwork == 'mainnet':
+        response = get_top_80_percent_cpu_multithread_providers(maxCheckedDaysAgo=maxCheckedDaysAgo, topPercent=topPercent)
+    elif paymentNetwork == 'goerli' or paymentNetwork == 'mumbai' or paymentNetwork == 'holesky':
+        response = []
     else:
-        top_providers = []
+        return JsonResponse({"error": "Network not found"}, status=404)
 
-    return top_providers
+    if response or response == []:
+        return response
+    else:
+        # Handle the case where data is not yet available in Redis
+        return JsonResponse({"error": "Data not available"}, status=503)

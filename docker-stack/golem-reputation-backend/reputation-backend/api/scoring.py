@@ -153,3 +153,38 @@ def get_normalized_cpu_scores():
         }
 
     return cpu_scores
+
+
+
+from django.db.models import Sum, F
+from django.db.models.functions import Now
+from datetime import timedelta
+from django.db.models.expressions import Window
+from django.db.models.functions.window import PercentRank
+from .models import CpuBenchmark
+
+# GNV replacement
+def get_top_80_percent_cpu_multithread_providers(maxCheckedDaysAgo=3, topPercent=80):
+    # Filter benchmarks based on the last N days and by multi-thread benchmark
+    recent_benchmarks = CpuBenchmark.objects.filter(
+        created_at__gte=Now() - timedelta(days=maxCheckedDaysAgo),
+        benchmark_name__icontains='multi-thread'  # Adjust based on your actual naming
+    ).values('provider_id').annotate(
+        total_score=Sum('events_per_second')
+    ).order_by('-total_score')
+    
+    # Calculate the index for the 80th percentile cutoff
+    count = len(recent_benchmarks)
+    cutoff_index = int(count * (topPercent / 100)) - 1  # Adjust the cutoff to get the top 80%
+
+    # Get the total scores as a list and find the cutoff score
+    total_scores = list(recent_benchmarks.values_list('total_score', flat=True))
+    if total_scores:  # Ensure the list is not empty
+        cutoff_score = total_scores[cutoff_index]
+
+        # Filter providers by score, comparing against the cutoff score
+        top_providers = [benchmark['provider_id'] for benchmark in recent_benchmarks if benchmark['total_score'] >= cutoff_score]
+    else:
+        top_providers = []
+
+    return top_providers
