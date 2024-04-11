@@ -343,7 +343,7 @@ def start_benchmark(request):
 from .scoring import get_top_80_percent_cpu_multithread_providers
 
 
-@api.get("/whitelist")
+@api.get("/provider-whitelist")
 def gnv_whitelist(request, paymentNetwork: str = 'polygon',topPercent=80, maxCheckedDaysAgo=3):
     if paymentNetwork == 'polygon' or paymentNetwork == 'mainnet':
         response = get_top_80_percent_cpu_multithread_providers(maxCheckedDaysAgo=maxCheckedDaysAgo, topPercent=topPercent)
