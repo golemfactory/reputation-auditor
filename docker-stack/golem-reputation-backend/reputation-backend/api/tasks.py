@@ -28,45 +28,46 @@ from random import randint
 
 @app.task(queue='benchmarker', options={'queue': 'benchmarker', 'routing_key': 'benchmarker'})
 def benchmark_providers_task():
-    try:
-        budget_per_provider = os.environ.get('BUDGET_PER_PROVIDER', 0.1)
-
-        # Subquery to get the latest NodeStatusHistory for each provider
-        latest_status_subquery = NodeStatusHistory.objects.filter(
-            provider=OuterRef('pk')
-        ).order_by('-timestamp').values('is_online')[:1]
-
-        # Query for providers that are on mainnet and their latest status is online
-        mainnet_provider_count = Provider.objects.filter(
-            network='mainnet',
-            nodestatushistory__is_online=Subquery(latest_status_subquery)
-        ).count()
-
-        print(f"Found {mainnet_provider_count} online providers on the mainnet")
-
-        command = f"cd /benchmark && yagna payment release-allocations && npm run benchmark -- {mainnet_provider_count} {budget_per_provider}"
-        with subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) as proc:
-            while True:
-                output = proc.stdout.readline()
-                if output == '' and proc.poll() is not None:
-                    break
-                if output:
-                    print(output.strip())
-
-        rc = proc.poll()
-        # Calculate next execution time: next day at a random hour and minute
-        now = datetime.now()
-        next_run = (now + timedelta(days=1)).replace(hour=randint(0, 23), minute=randint(0, 59), second=0, microsecond=0)
-            # Calculate the seconds until the next run
-        delta_seconds = (next_run - now).total_seconds()
-
-        # Schedule the task at the calculated next run time
-        benchmark_providers_task.apply_async(countdown=delta_seconds)
-        print(f"Next benchmarking task scheduled for {next_run} in {delta_seconds} seconds")
-        
-        return rc
-    except Exception as e:
-        print(f"Error benchmarking providers: {e}")
+    pass
+#     try:
+#         budget_per_provider = os.environ.get('BUDGET_PER_PROVIDER', 0.1)
+#
+#         # Subquery to get the latest NodeStatusHistory for each provider
+#         latest_status_subquery = NodeStatusHistory.objects.filter(
+#             provider=OuterRef('pk')
+#         ).order_by('-timestamp').values('is_online')[:1]
+#
+#         # Query for providers that are on mainnet and their latest status is online
+#         mainnet_provider_count = Provider.objects.filter(
+#             network='mainnet',
+#             nodestatushistory__is_online=Subquery(latest_status_subquery)
+#         ).count()
+#
+#         print(f"Found {mainnet_provider_count} online providers on the mainnet")
+#
+#         command = f"cd /benchmark && yagna payment release-allocations && npm run benchmark -- {mainnet_provider_count} {budget_per_provider}"
+#         with subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) as proc:
+#             while True:
+#                 output = proc.stdout.readline()
+#                 if output == '' and proc.poll() is not None:
+#                     break
+#                 if output:
+#                     print(output.strip())
+#
+#         rc = proc.poll()
+#         # Calculate next execution time: next day at a random hour and minute
+#         now = datetime.now()
+#         next_run = (now + timedelta(days=1)).replace(hour=randint(0, 23), minute=randint(0, 59), second=0, microsecond=0)
+#             # Calculate the seconds until the next run
+#         delta_seconds = (next_run - now).total_seconds()
+#
+#         # Schedule the task at the calculated next run time
+#         benchmark_providers_task.apply_async(countdown=delta_seconds)
+#         print(f"Next benchmarking task scheduled for {next_run} in {delta_seconds} seconds")
+#
+#         return rc
+#     except Exception as e:
+#         print(f"Error benchmarking providers: {e}")
 
 
 @app.task

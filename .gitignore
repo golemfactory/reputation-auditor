@@ -140,3 +140,7 @@ uptime/uptime_consistency_by_region.png
 uptime/us_uptime.csv
 uptime/asia_uptime.csv
 docker-stack/benchmarker-datadir/*
+
+# IDEs
+.vscode/
+.idea/

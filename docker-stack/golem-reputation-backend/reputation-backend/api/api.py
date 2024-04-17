@@ -336,7 +336,7 @@ def store_offer(request, task_id: int):
 
 @api.get("/benchmark", auth=AuthBearer())
 def start_benchmark(request):
-    benchmark_providers_task.delay()
+    # benchmark_providers_task.delay()
     return {"status": "ok"}
 
 
