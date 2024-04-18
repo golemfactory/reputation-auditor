@@ -2,6 +2,7 @@ version: "3.8"
 volumes:
     db_data: {}
     pgadmin:
+    redis-data:
 services:
     traefik:
         image: traefik:latest
@@ -76,7 +77,9 @@ services:
             - reputation
     redis:
         image: "redis:alpine"
-        command: [sh, -c, "rm -f /data/dump.rdb && redis-server --maxclients 40000 --timeout 0  --save ''"]
+        command: [sh, -c, "redis-server --maxclients 40000 --timeout 0 --save 60 1 --save 300 10 --save 900 1000"]
+        volumes:
+            - redis-data:/data # Mounts the volume at /data in the container
         expose:
             - "6379"
         deploy:
@@ -105,7 +108,11 @@ services:
             - reputation
     uptime_worker:
         command:
-            ["/bin/sh", "-c", "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q uptime -c 1"]
+            [
+                "/bin/sh",
+                "-c",
+                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q uptime -c 1",
+            ]
         image: ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:latest
         env_file:
             - ./.envs/.django
@@ -130,7 +137,7 @@ services:
             [
                 "/bin/sh",
                 "-c",
-                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; cd benchmark; npm run benchmark-scheduler",
+                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; cd /benchmark; npm i && npm run benchmark-scheduler",
             ]
         image: ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:latest
         env_file:
@@ -156,7 +163,11 @@ services:
             - reputation
     ping_worker:
         command:
-            ["/bin/sh", "-c", "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q pinger -c 1"]
+            [
+                "/bin/sh",
+                "-c",
+                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q pinger -c 1",
+            ]
         image: ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:latest
         env_file:
             - ./.envs/.django
