@@ -96,8 +96,7 @@ services:
         image: ghcr.io/golemfactory/golem-reputation-backend-celery:latest
         env_file:
             - ./.envs/.django
-        command:
-            ["/bin/sh", "-c", "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q default"]
+        command: ["/bin/sh", "-c", "/wait-for-it.sh ${POSTGRES_DB} -- celery -A core worker -l INFO -Q default"]
         deploy:
             replicas: 1
             update_config:
