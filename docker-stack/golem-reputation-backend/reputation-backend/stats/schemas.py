@@ -12,6 +12,7 @@ class TaskParticipationSchema(Schema):
     completion_status: str
     error_message: Optional[str] = None
     cost: Optional[float] = None
+    task_started_at: Optional[str] = None
 
 
 
