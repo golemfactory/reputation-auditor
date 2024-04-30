@@ -350,13 +350,34 @@ export class Golem {
                     //  Or did the terminate fail and the SDK does not send that?
                 },
                 validate: async (activity: Activity) => {
-                    const state = await activity.getState()
+                    let retries = 5
+                    let state
+                    this.logger("Validating activity in the pool")
+
+                    while (retries > 0) {
+                        try {
+                            this.logger("Getting state of activity")
+                            state = await activity.getState()
+                            break // If getState succeeds, break out of the loop
+                        } catch (error) {
+                            retries--
+                            if (retries === 0) {
+                                this.logger("Failed to get state after multiple retries. Terminating agreement")
+                                // Terminate agreement
+                                await this.agreementService.releaseAgreement(activity.agreement.id, true)
+                            }
+                            this.logger("Request timed out, retrying...")
+                            await new Promise((resolve) => setTimeout(resolve, 1000)) // Wait for 1 second before retrying
+                        }
+                    }
+
                     const result = state !== ActivityStateEnum.Terminated
                     this.logger("Validating activity in the pool, result: %s, state: %s", result, state)
-                    // validate if activity has already been used else terminate activity return false
+
                     if (this.config.computedAlready.includes(activity.agreement.id)) {
                         return false
                     }
+
                     return result
                 },
             },
