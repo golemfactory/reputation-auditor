@@ -5,7 +5,7 @@ volumes:
     redis-data:
 services:
     traefik:
-        image: traefik:latest
+        image: traefik:v2.9.6
         ports:
             - "80:80"
             - "443:443"
