@@ -288,7 +288,11 @@ def get_provider_details(request, node_id: str):
         if offer.accepted:
             try:
                 completion = TaskCompletion.objects.get(task_id=offer.task_id, provider=provider)
-                benchmark_type = completion.task_name.split('_')[1]  # Assumes format "benchmark_{type}"
+                try:
+                    benchmark_type = completion.task_name.split('_')[1]
+                except IndexError:
+                    # Default or fallback value if task_name is not in the expected format
+                    benchmark_type = completion.task_name
         
                 if completion.is_successful:
                     task_entry.completion_status = "Completed Successfully"
