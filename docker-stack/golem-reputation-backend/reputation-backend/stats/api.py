@@ -289,7 +289,8 @@ def get_provider_details(request, node_id: str):
             try:
                 completion = TaskCompletion.objects.get(task_id=offer.task_id, provider=provider)
                 try:
-                    benchmark_type = completion.task_name.split('_')[1]
+                    parts = completion.task_name.split()
+                    benchmark_type = parts[1] if len(parts) > 1 else completion.task_name
                 except IndexError:
                     # Default or fallback value if task_name is not in the expected format
                     benchmark_type = completion.task_name
@@ -300,7 +301,7 @@ def get_provider_details(request, node_id: str):
                 else:
                     task_entry.completion_status = "Failed"
                     # Update the error message to include the specific benchmark type
-                    task_entry.error_message = f"{benchmark_type.capitalize()} Benchmark Failed with error: {completion.error_message}"
+                    task_entry.error_message = f"{benchmark_type.capitalize()} benchmark - {completion.error_message}"
                 task_entry.cost = completion.cost
             except TaskCompletion.DoesNotExist:
                 task_entry.completion_status = "Accepted offer, but the task was not started. Reason unknown."
