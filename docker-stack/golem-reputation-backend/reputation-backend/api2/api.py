@@ -60,7 +60,7 @@ from django.db.models import Avg
     - `minSequentialReadDiskThroughput` and `maxSequentialReadDiskThroughput` filter based on minimum and maximum sequential disk read throughput in MB/s.
     - `minSequentialWriteDiskThroughput` and `maxSequentialWriteDiskThroughput` filter based on minimum and maximum sequential disk write throughput in MB/s.
     - `minNetworkDownloadSpeed` and `maxNetworkDownloadSpeed` filter based on minimum and maximum network download speed in Mbit/s.
-    - `minPing` and `maxPing` filter based on minimum and maximum average of the last 5 pings in milliseconds.
+    - `minPing` and `maxPing` filter based on minimum and maximum average of the last 5 pings in milliseconds. The `pingRegion` parameter is used to filter by region (default is 'europe').
     - `minSuccessRate` and `maxSuccessRate` filter providers by the percentage of successfully completed tasks.
     - `minProviderAge` filters providers based on the number of days since their creation. This is useful for ensuring that providers have a track record.
     Providers are only included in the result if they are currently online and not blacklisted.
