@@ -5,7 +5,8 @@ api = NinjaAPI(
     title="Golem Reputation API",
     version="2.0.0",
     description="API for Golem Reputation Backend",
-    urls_namespace="api2",
+    urls_namespace="api2:api",
+    docs_url="/docs/"
 )
 import redis
 
@@ -46,7 +47,6 @@ from django.db.models import Avg
     summary="Retrieve a list of provider IDs",
     description="""
     This endpoint retrieves a list of active provider IDs filtered according to various performance metrics and status indicators.
-    The filters include uptime, CPU multi-thread and single-thread performance scores, memory performance metrics, success rate of tasks, and disk performance metrics.
     Each filter is optional and can range between minimum and maximum values provided by the client.
     - `minUptime` and `maxUptime` filter providers based on their uptime percentage.
     - `minCpuMultiThreadScore` and `maxCpuMultiThreadScore` filter providers based on their CPU multi-thread benchmark scores.
@@ -62,7 +62,7 @@ from django.db.models import Avg
     - `minNetworkDownloadSpeed` and `maxNetworkDownloadSpeed` filter based on minimum and maximum network download speed in Mbit/s.
     - `minPing` and `maxPing` filter based on minimum and maximum average of the last 5 pings in milliseconds. The `pingRegion` parameter is used to filter by region (default is 'europe').
     - `minSuccessRate` and `maxSuccessRate` filter providers by the percentage of successfully completed tasks.
-    - `minProviderAge` filters providers based on the number of days since their creation. This is useful for ensuring that providers have a track record.
+    - `minProviderAge` filters providers based on the number of days since their creation. This means that if you're in need of providers that have been around for a while, you can use this filter to exclude newer providers. Uptime is calculated based on the time since the provider was created, so this filter can be used in conjunction with the `minUptime` filter to ensure that you're only getting providers that have been around for a while and have a good uptime percentage.
     Providers are only included in the result if they are currently online and not blacklisted.
     """,
 )

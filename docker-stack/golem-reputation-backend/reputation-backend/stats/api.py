@@ -10,7 +10,8 @@ api = NinjaAPI(
     title="Golem Reputation Stats API",
     version="1.0.0",
     description="Stats API",
-    urls_namespace="stats",
+    urls_namespace="stats:api",
+    docs_url="/docs/"
 )
 
 def get_summary(deviation):
