@@ -79,7 +79,7 @@ def filter_providers(request,
                   minSequentialReadDiskThroughput: float = None, maxSequentialReadDiskThroughput: float = None,
                   minSequentialWriteDiskThroughput: float = None, maxSequentialWriteDiskThroughput: float = None,
                   minNetworkDownloadSpeed: float = None, maxNetworkDownloadSpeed: float = None,
-                    minPing: float = None, maxPing: float = None,
+                minPing: float = None, maxPing: float = None, pingRegion: str = "europe",
                   minSuccessRate: float = None, maxSuccessRate: float = None, 
                   minProviderAgeDays: int = None):
     
@@ -341,21 +341,29 @@ def filter_providers(request,
             )
         ).filter(latest_network_download_speed__lte=maxNetworkDownloadSpeed)
 
+    ping_filter = Q(region=pingRegion)
+
     if minPing is not None:
-            eligible_providers = eligible_providers.annotate(
-                avg_ping_udp=Subquery(
-                    PingResult.objects.filter(provider=OuterRef('pk'))
-                    .order_by('-created_at').values('ping_udp')[:5]
-                    .annotate(avg_value=Avg('ping_udp'))
-                    .values('avg_value')[:1]
-                )
-            ).filter(avg_ping_udp__gte=minPing)
+        eligible_providers = eligible_providers.annotate(
+            avg_ping_udp=Subquery(
+                PingResult.objects.filter(
+                    ping_filter,  # Apply the region filter directly
+                    provider=OuterRef('pk'),
+                    
+                ).order_by('-created_at').values('ping_udp')[:5]
+                .annotate(avg_value=Avg('ping_udp'))
+                .values('avg_value')[:1]
+            )
+        ).filter(avg_ping_udp__gte=minPing)
 
     if maxPing is not None:
         eligible_providers = eligible_providers.annotate(
             avg_ping_udp=Subquery(
-                PingResult.objects.filter(provider=OuterRef('pk'))
-                .order_by('-created_at').values('ping_udp')[:5]
+                PingResult.objects.filter(
+                    ping_filter,  # Apply the region filter directly
+                    provider=OuterRef('pk'),
+                    
+                ).order_by('-created_at').values('ping_udp')[:5]
                 .annotate(avg_value=Avg('ping_udp'))
                 .values('avg_value')[:1]
             )

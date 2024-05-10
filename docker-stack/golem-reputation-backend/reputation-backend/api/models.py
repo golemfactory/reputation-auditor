@@ -56,7 +56,19 @@ class DiskBenchmark(models.Model):
     max_latency_ms = models.FloatField()
     latency_95th_percentile_ms = models.FloatField()
     created_at = models.DateTimeField(auto_now_add=True, null=True)
-    
+    class Meta:
+        indexes = [
+            models.Index(fields=['provider']),
+            models.Index(fields=['benchmark_name']),
+            models.Index(fields=['created_at']),
+            models.Index(fields=['reads_per_second']),
+            models.Index(fields=['writes_per_second']),
+            models.Index(fields=['read_throughput_mb_ps']),
+            models.Index(fields=['write_throughput_mb_ps']),
+            models.Index(fields=['provider', 'created_at']),
+            models.Index(fields=['benchmark_name', 'created_at']),
+            models.Index(fields=['provider', 'benchmark_name', 'created_at']),
+        ]
 
 class MemoryBenchmark(models.Model):
     provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  
@@ -79,7 +91,16 @@ class MemoryBenchmark(models.Model):
     events = models.FloatField()
     execution_time_sec = models.FloatField()
     created_at = models.DateTimeField(auto_now_add=True, null=True)
-
+    class Meta:
+        indexes = [
+            models.Index(fields=['provider']),
+            models.Index(fields=['benchmark_name']),
+            models.Index(fields=['created_at']),
+            models.Index(fields=['throughput_mi_b_sec']),
+            models.Index(fields=['provider', 'created_at']),
+            models.Index(fields=['benchmark_name', 'created_at']),
+            models.Index(fields=['provider', 'benchmark_name', 'created_at']),
+        ]
 
 
 class CpuBenchmark(models.Model):
@@ -97,6 +118,15 @@ class CpuBenchmark(models.Model):
     latency_95th_percentile_ms = models.FloatField()
     sum_latency_ms = models.FloatField()
     created_at = models.DateTimeField(auto_now_add=True, null=True)
+    class Meta:
+        indexes = [
+            models.Index(fields=['provider']),
+            models.Index(fields=['benchmark_name']),
+            models.Index(fields=['created_at']),
+            models.Index(fields=['events_per_second']),
+            models.Index(fields=['provider', 'created_at']),
+            models.Index(fields=['benchmark_name', 'created_at']),
+        ]
 
 class NetworkBenchmark(models.Model):
     provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  
@@ -120,8 +150,13 @@ class TaskCompletion(models.Model):
     cost = models.FloatField(null=True)  # Cost of the task in GLM
     # type , default CPU but GPU also possible
     type = models.CharField(max_length=255, default='CPU')  # Type of the task, e.g., 'CPU' or 'GPU'
-
-
+    class Meta:
+        indexes = [
+            models.Index(fields=['provider', 'timestamp']),
+            models.Index(fields=['task']),
+            models.Index(fields=['provider', 'is_successful'], name='idx_provider_success', condition=models.Q(is_successful=True)),
+            models.Index(fields=['type']),
+        ]
 
 class PingResult(models.Model):
     provider = models.ForeignKey(Provider, on_delete=models.CASCADE)  # Link to a Provider
@@ -149,3 +184,7 @@ class NodeStatusHistory(models.Model):
     def __str__(self):
         return f"{self.provider.node_id} - {'Online' if self.is_online else 'Offline'} at {self.timestamp}"
 
+    class Meta:
+        indexes = [
+            models.Index(fields=["provider", "timestamp"]),
+        ]
