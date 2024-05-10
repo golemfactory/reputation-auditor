@@ -30,7 +30,7 @@ def list_provider_scores(request, network: str = 'polygon'):
         return JsonResponse({"error": "Data not available"}, status=503)
 
 
-from api.models import Provider, CpuBenchmark, NodeStatusHistory, TaskCompletion, BlacklistedProvider, BlacklistedOperator
+from api.models import Provider, CpuBenchmark, NodeStatusHistory, TaskCompletion, BlacklistedProvider, BlacklistedOperator, MemoryBenchmark, DiskBenchmark, NetworkBenchmark, PingResult
 from api.scoring import calculate_uptime, penalty_weight
 from django.db.models import Subquery, OuterRef
 
@@ -39,18 +39,30 @@ from django.db.models.functions import Cast
 from django.db.models import Q
 from datetime import timedelta
 from django.utils import timezone
+from django.db.models import Avg
+
 @api.get(
     "/filter",
     summary="Retrieve a list of provider IDs",
     description="""
     This endpoint retrieves a list of active provider IDs filtered according to various performance metrics and status indicators.
-    The filters include uptime, CPU multi-thread and single-thread performance scores, and success rate of tasks. 
-    Each filter is optional and can range between minimum and maximum values provided by the client. 
+    The filters include uptime, CPU multi-thread and single-thread performance scores, memory performance metrics, success rate of tasks, and disk performance metrics.
+    Each filter is optional and can range between minimum and maximum values provided by the client.
     - `minUptime` and `maxUptime` filter providers based on their uptime percentage.
     - `minCpuMultiThreadScore` and `maxCpuMultiThreadScore` filter providers based on their CPU multi-thread benchmark scores.
     - `minCpuSingleThreadScore` and `maxCpuSingleThreadScore` filter based on CPU single-thread benchmark scores.
+    - `minMemorySeqRead` and `maxMemorySeqRead` filter based on minimum and maximum sequential read performance in MiB/sec.
+    - `minMemorySeqWrite` and `maxMemorySeqWrite` filter based on minimum and maximum sequential write performance in MiB/sec.
+    - `minMemoryRandRead` and `maxMemoryRandRead` filter based on minimum and maximum random read performance in operations per second.
+    - `minMemoryRandWrite` and `maxMemoryRandWrite` filter based on minimum and maximum random write performance in operations per second.
+    - `minRandomReadDiskThroughput` and `maxRandomReadDiskThroughput` filter based on minimum and maximum random disk read throughput in MB/s.
+    - `minRandomWriteDiskThroughput` and `maxRandomWriteDiskThroughput` filter based on minimum and maximum random disk write throughput in MB/s.
+    - `minSequentialReadDiskThroughput` and `maxSequentialReadDiskThroughput` filter based on minimum and maximum sequential disk read throughput in MB/s.
+    - `minSequentialWriteDiskThroughput` and `maxSequentialWriteDiskThroughput` filter based on minimum and maximum sequential disk write throughput in MB/s.
+    - `minNetworkDownloadSpeed` and `maxNetworkDownloadSpeed` filter based on minimum and maximum network download speed in Mbit/s.
+    - `minPing` and `maxPing` filter based on minimum and maximum average of the last 5 pings in milliseconds.
     - `minSuccessRate` and `maxSuccessRate` filter providers by the percentage of successfully completed tasks.
-    - `minProviderAge` filters providers based on the number of days since their creation. This is useful for when you need some specific uptime but also want to ensure that the provider has been around for a certain amount of time.
+    - `minProviderAge` filters providers based on the number of days since their creation. This is useful for ensuring that providers have a track record.
     Providers are only included in the result if they are currently online and not blacklisted.
     """,
 )
@@ -58,7 +70,18 @@ def filter_providers(request,
                   minUptime: float = None, maxUptime: float = None, 
                   minCpuMultiThreadScore: float = None, maxCpuMultiThreadScore: float = None, 
                   minCpuSingleThreadScore: float = None, maxCpuSingleThreadScore: float = None, 
-                  minSuccessRate: float = None, maxSuccessRate: float = None, minProviderAgeDays: int = None):
+                  minMemorySeqRead: float = None, maxMemorySeqRead: float = None,
+                  minMemorySeqWrite: float = None, maxMemorySeqWrite: float = None,
+                  minMemoryRandRead: float = None, maxMemoryRandRead: float = None,
+                  minMemoryRandWrite: float = None, maxMemoryRandWrite: float = None,
+                  minRandomReadDiskThroughput: float = None, maxRandomReadDiskThroughput: float = None,
+                  minRandomWriteDiskThroughput: float = None, maxRandomWriteDiskThroughput: float = None,
+                  minSequentialReadDiskThroughput: float = None, maxSequentialReadDiskThroughput: float = None,
+                  minSequentialWriteDiskThroughput: float = None, maxSequentialWriteDiskThroughput: float = None,
+                  minNetworkDownloadSpeed: float = None, maxNetworkDownloadSpeed: float = None,
+                    minPing: float = None, maxPing: float = None,
+                  minSuccessRate: float = None, maxSuccessRate: float = None, 
+                  minProviderAgeDays: int = None):
     
     blacklisted_providers = set(BlacklistedProvider.objects.values_list('provider_id', flat=True))
     blacklisted_op_wallets = set(BlacklistedOperator.objects.values_list('wallet', flat=True))
@@ -139,5 +162,205 @@ def filter_providers(request,
             )
         ).filter(calculated_success_rate__lte=maxSuccessRate)
 
+    if minMemorySeqRead is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_mem_seq_read=Subquery(
+                MemoryBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                    benchmark_name="Sequential_Read_Performance__Single_Thread_"
+                ).order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )
+        ).filter(latest_mem_seq_read__gte=minMemorySeqRead)
+
+    if maxMemorySeqRead is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_mem_seq_read=Subquery(
+                MemoryBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                    benchmark_name="Sequential_Read_Performance__Single_Thread_"
+                ).order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )
+        ).filter(latest_mem_seq_read__lte=maxMemorySeqRead)
+
+    if minMemorySeqWrite is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_mem_seq_write=Subquery(
+                MemoryBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                    benchmark_name="Sequential_Write_Performance__Single_Thread_"
+                ).order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )
+        ).filter(latest_mem_seq_write__gte=minMemorySeqWrite)
+
+    if maxMemorySeqWrite is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_mem_seq_write=Subquery(
+                MemoryBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                    benchmark_name="Sequential_Write_Performance__Single_Thread_"
+                ).order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )
+        ).filter(latest_mem_seq_write__lte=maxMemorySeqWrite)
+
+    if minMemoryRandRead is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_mem_rand_read=Subquery(
+                MemoryBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                    benchmark_name="Random_Read_Performance__Multi_threaded_"
+                ).order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )
+        ).filter(latest_mem_rand_read__gte=minMemoryRandRead)
+
+    if maxMemoryRandRead is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_mem_rand_read=Subquery(
+                MemoryBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                    benchmark_name="Random_Read_Performance__Multi_threaded_"
+                ).order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )
+        ).filter(latest_mem_rand_read__lte=maxMemoryRandRead)
+
+
+    if minMemoryRandWrite is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_mem_rand_write=Subquery(
+                MemoryBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                    benchmark_name="Random_Write_Performance__Multi_threaded_"
+                ).order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )
+        ).filter(latest_mem_rand_write__gte=minMemoryRandWrite)
+
+    if maxMemoryRandWrite is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_mem_rand_write=Subquery(
+                MemoryBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                    benchmark_name="Random_Write_Performance__Multi_threaded_"
+                ).order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )
+        ).filter(latest_mem_rand_write__lte=maxMemoryRandWrite)
+
+    if minRandomReadDiskThroughput is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_disk_random_read_throughput=Subquery(
+                DiskBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                    benchmark_name="FileIO_rndrd"
+                ).order_by('-created_at').values('read_throughput_mb_ps')[:1]
+            )
+        ).filter(latest_disk_random_read_throughput__gte=minRandomReadDiskThroughput)
+
+    if maxRandomReadDiskThroughput is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_disk_random_read_throughput=Subquery(
+                DiskBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                    benchmark_name="FileIO_rndrd"
+                ).order_by('-created_at').values('read_throughput_mb_ps')[:1]
+            )
+        ).filter(latest_disk_random_read_throughput__lte=maxRandomReadDiskThroughput)
+
+    if minRandomWriteDiskThroughput is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_disk_random_write_throughput=Subquery(
+                DiskBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                    benchmark_name="FileIO_rndwr"
+                ).order_by('-created_at').values('write_throughput_mb_ps')[:1]
+            )
+        ).filter(latest_disk_random_write_throughput__gte=minRandomWriteDiskThroughput)
+
+    if maxRandomWriteDiskThroughput is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_disk_random_write_throughput=Subquery(
+                DiskBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                    benchmark_name="FileIO_rndwr"
+                ).order_by('-created_at').values('write_throughput_mb_ps')[:1]
+            )
+        ).filter(latest_disk_random_write_throughput__lte=maxRandomWriteDiskThroughput)
+
+    if minSequentialReadDiskThroughput is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_disk_sequential_read_throughput=Subquery(
+                DiskBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                    benchmark_name="FileIO_seqrd"
+                ).order_by('-created_at').values('read_throughput_mb_ps')[:1]
+            )
+        ).filter(latest_disk_sequential_read_throughput__gte=minSequentialReadDiskThroughput)
+
+    if maxSequentialReadDiskThroughput is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_disk_sequential_read_throughput=Subquery(
+                DiskBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                    benchmark_name="FileIO_seqrd"
+                ).order_by('-created_at').values('read_throughput_mb_ps')[:1]
+            )
+        ).filter(latest_disk_sequential_read_throughput__lte=maxSequentialReadDiskThroughput)
+
+    if minSequentialWriteDiskThroughput is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_disk_sequential_write_throughput=Subquery(
+                DiskBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                    benchmark_name="FileIO_seqwr"
+                ).order_by('-created_at').values('write_throughput_mb_ps')[:1]
+            )
+        ).filter(latest_disk_sequential_write_throughput__gte=minSequentialWriteDiskThroughput)
+
+    if maxSequentialWriteDiskThroughput is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_disk_sequential_write_throughput=Subquery(
+                DiskBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                    benchmark_name="FileIO_seqwr"
+                ).order_by('-created_at').values('write_throughput_mb_ps')[:1]
+            )
+        ).filter(latest_disk_sequential_write_throughput__lte=maxSequentialWriteDiskThroughput)
+
+    if minNetworkDownloadSpeed is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_network_download_speed=Subquery(
+                NetworkBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                ).order_by('-created_at').values('mbit_per_second')[:1]
+            )
+        ).filter(latest_network_download_speed__gte=minNetworkDownloadSpeed)
+
+    if maxNetworkDownloadSpeed is not None:
+        eligible_providers = eligible_providers.annotate(
+            latest_network_download_speed=Subquery(
+                NetworkBenchmark.objects.filter(
+                    provider=OuterRef('pk'),
+                ).order_by('-created_at').values('mbit_per_second')[:1]
+            )
+        ).filter(latest_network_download_speed__lte=maxNetworkDownloadSpeed)
+
+    if minPing is not None:
+            eligible_providers = eligible_providers.annotate(
+                avg_ping_udp=Subquery(
+                    PingResult.objects.filter(provider=OuterRef('pk'))
+                    .order_by('-created_at').values('ping_udp')[:5]
+                    .annotate(avg_value=Avg('ping_udp'))
+                    .values('avg_value')[:1]
+                )
+            ).filter(avg_ping_udp__gte=minPing)
+
+    if maxPing is not None:
+        eligible_providers = eligible_providers.annotate(
+            avg_ping_udp=Subquery(
+                PingResult.objects.filter(provider=OuterRef('pk'))
+                .order_by('-created_at').values('ping_udp')[:5]
+                .annotate(avg_value=Avg('ping_udp'))
+                .values('avg_value')[:1]
+            )
+        ).filter(avg_ping_udp__lte=maxPing)
     provider_ids = eligible_providers.values_list('node_id', flat=True)
     return {"provider_ids": list(provider_ids)}
+
+
