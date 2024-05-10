@@ -398,12 +398,8 @@ def create_pings(request, region: str, pings: list[PingSchema]):
             region=region
         ))
         except ObjectDoesNotExist:
-            error_msgs.append(f"Provider with node_id '{provider_id}' does not exist.")
             continue
         
-    
-    if error_msgs:
-        return JsonResponse({"error": error_msgs}, status=400)
     
     PingResult.objects.bulk_create(pings_to_create)
     return {"message": "Pings created"}
