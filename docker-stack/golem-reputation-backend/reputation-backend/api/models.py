@@ -118,6 +118,8 @@ class TaskCompletion(models.Model):
     timestamp = models.DateTimeField(auto_now_add=True)  # When the record was created
     task= models.ForeignKey('Task', on_delete=models.CASCADE, null=True)  # Link to a Task model
     cost = models.FloatField(null=True)  # Cost of the task in GLM
+    # type , default CPU but GPU also possible
+    type = models.CharField(max_length=255, default='CPU')  # Type of the task, e.g., 'CPU' or 'GPU'
 
 
 

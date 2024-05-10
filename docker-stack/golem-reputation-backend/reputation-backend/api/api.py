@@ -95,6 +95,7 @@ def create_bulk_task_completion(request, data: List[TaskCompletionSchema]):
                 task_name=item.task_name,
                 is_successful=item.is_successful,
                 error_message=item.error_message,
+                type=item.type,
             ))
         except Exception as e:
             errors.append(f"Error processing item with node_id {item.node_id}: {str(e)}")

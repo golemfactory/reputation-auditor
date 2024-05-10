@@ -72,6 +72,7 @@ class TaskCompletionSchema(Schema):
     is_successful: bool
     error_message: str = None
     task_id: int
+    type: str = "CPU"  # Default value of 'CPU', can also take 'GPU'
 
 
 class TaskCostUpdateSchema(Schema):

@@ -43,7 +43,7 @@ services:
         build:
             context: golem-reputation-backend/.
             dockerfile: dockerfiles/Django
-        image: backend:latest
+        image: backend-reputation:latest
         volumes:
             - "./golem-reputation-backend/reputation-backend:/reputation-backend/"
         env_file:
@@ -226,7 +226,7 @@ services:
         build:
             context: golem-reputation-backend/.
             dockerfile: dockerfiles/Beat
-        image: celery-beat:latest
+        image: celery-beat-reputation:latest
         command: celery -A core beat -l INFO
         volumes:
             - "./golem-reputation-backend/reputation-backend:/reputation-backend/"
