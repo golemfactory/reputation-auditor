@@ -390,17 +390,17 @@ def create_pings(request, region: str, pings: list[PingSchema]):
         provider_id = ping_data.provider_id  # Get provider_id from the POST request
         try:
             provider = Provider.objects.get(node_id=provider_id)  # Fetch the Provider instance using node_id
-        except ObjectDoesNotExist:
-            error_msgs.append(f"Provider with node_id '{provider_id}' does not exist.")
-            continue
-        
-        pings_to_create.append(PingResult(
+            pings_to_create.append(PingResult(
             provider=provider,
             ping_udp=ping_data.ping_udp,
             ping_tcp=ping_data.ping_tcp,
             created_at=timezone.now(),
             region=region
         ))
+        except ObjectDoesNotExist:
+            error_msgs.append(f"Provider with node_id '{provider_id}' does not exist.")
+            continue
+        
     
     if error_msgs:
         return JsonResponse({"error": error_msgs}, status=400)
