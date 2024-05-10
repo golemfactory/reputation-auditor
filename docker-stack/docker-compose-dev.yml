@@ -67,7 +67,7 @@ services:
             - reputation
     redis:
         image: "redis:alpine"
-        command: [sh, -c, "redis-server --maxclients 40000 --timeout 0 --save 60 1 --save 300 10 --save 900 1000"]
+        command: [sh, -c, "redis-server --maxclients 40000 --timeout 0 --save 300 500 --save 900 2000"]
         volumes:
             - redis-data:/data # Mounts the volume at /data in the container
         expose:
