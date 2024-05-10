@@ -418,4 +418,22 @@ def get_blacklisted_providers():
 
     return blacklisted_providers
 
+from .models import PingResult, PingResultP2P
 
+@app.task
+def delete_old_ping_results():
+    # Calculate the date 30 days ago from today
+    thirty_days_ago = timezone.now() - timedelta(days=30)
+
+    # Delete PingResult records older than 30 days
+    old_ping_results = PingResult.objects.filter(created_at__lt=thirty_days_ago)
+    count_ping_results = old_ping_results.count()
+    old_ping_results.delete()
+
+    # Delete PingResultP2P records older than 30 days
+    old_ping_results_p2p = PingResultP2P.objects.filter(created_at__lt=thirty_days_ago)
+    count_ping_results_p2p = old_ping_results_p2p.count()
+    old_ping_results_p2p.delete()
+
+    # Optionally, you can log the number of deleted records or return it
+    print(f"Deleted {count_ping_results} PingResult records and {count_ping_results_p2p} PingResultP2P records older than 30 days.")
