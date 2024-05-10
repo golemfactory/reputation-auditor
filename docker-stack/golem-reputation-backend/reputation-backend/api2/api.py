@@ -363,4 +363,47 @@ def filter_providers(request,
     provider_ids = eligible_providers.values_list('node_id', flat=True)
     return {"provider_ids": list(provider_ids)}
 
+from ninja import Schema
+# Bulk create pings
+from django.core.exceptions import ObjectDoesNotExist
+import os
 
+from ninja.security import HttpBearer
+
+
+class PingSecret(HttpBearer):
+    def authenticate(self, request, token):
+        if token == os.getenv('PING_SECRET'):
+            return token
+class PingSchema(Schema):
+    provider_id: str  # Change the type to str to match node_id
+    ping_udp: float
+    ping_tcp: float
+
+@api.post("/pings", auth=PingSecret())
+def create_pings(request, region: str, pings: list[PingSchema]):
+    pings_to_create = []
+    error_msgs = []
+
+    
+    for ping_data in pings:
+        provider_id = ping_data.provider_id  # Get provider_id from the POST request
+        try:
+            provider = Provider.objects.get(node_id=provider_id)  # Fetch the Provider instance using node_id
+        except ObjectDoesNotExist:
+            error_msgs.append(f"Provider with node_id '{provider_id}' does not exist.")
+            continue
+        
+        pings_to_create.append(PingResult(
+            provider=provider,
+            ping_udp=ping_data.ping_udp,
+            ping_tcp=ping_data.ping_tcp,
+            created_at=timezone.now(),
+            region=region
+        ))
+    
+    if error_msgs:
+        return JsonResponse({"error": error_msgs}, status=400)
+    
+    PingResult.objects.bulk_create(pings_to_create)
+    return {"message": "Pings created"}

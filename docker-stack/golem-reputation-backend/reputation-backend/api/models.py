@@ -1,7 +1,7 @@
 from django.db import models
 from django.db.models.fields import BigIntegerField, CharField
 from django.utils import timezone
-
+import os
 
 
 
@@ -129,6 +129,7 @@ class PingResult(models.Model):
     ping_tcp = models.IntegerField()  # Ping result for TCP, e.g., 96
     ping_udp = models.IntegerField()  # Ping result for UDP, e.g., 96
     created_at = models.DateTimeField(auto_now_add=True, null=True)
+    region = models.CharField(max_length=255, default=os.environ.get('REGION', 'local'))
 
 
 class PingResultP2P(models.Model):
