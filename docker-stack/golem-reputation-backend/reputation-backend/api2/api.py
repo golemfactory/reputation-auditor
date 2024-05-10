@@ -37,7 +37,8 @@ from django.db.models import Subquery, OuterRef
 from django.db.models import Count, Case, When, FloatField
 from django.db.models.functions import Cast
 from django.db.models import Q
-
+from datetime import timedelta
+from django.utils import timezone
 @api.get(
     "/filter",
     summary="Retrieve a list of provider IDs",
@@ -49,6 +50,7 @@ from django.db.models import Q
     - `minCpuMultiThreadScore` and `maxCpuMultiThreadScore` filter providers based on their CPU multi-thread benchmark scores.
     - `minCpuSingleThreadScore` and `maxCpuSingleThreadScore` filter based on CPU single-thread benchmark scores.
     - `minSuccessRate` and `maxSuccessRate` filter providers by the percentage of successfully completed tasks.
+    - `minProviderAge` filters providers based on the number of days since their creation. This is useful for when you need some specific uptime but also want to ensure that the provider has been around for a certain amount of time.
     Providers are only included in the result if they are currently online and not blacklisted.
     """,
 )
@@ -56,7 +58,7 @@ def filter_providers(request,
                   minUptime: float = None, maxUptime: float = None, 
                   minCpuMultiThreadScore: float = None, maxCpuMultiThreadScore: float = None, 
                   minCpuSingleThreadScore: float = None, maxCpuSingleThreadScore: float = None, 
-                  minSuccessRate: float = None, maxSuccessRate: float = None):
+                  minSuccessRate: float = None, maxSuccessRate: float = None, minProviderAgeDays: int = None):
     
     blacklisted_providers = set(BlacklistedProvider.objects.values_list('provider_id', flat=True))
     blacklisted_op_wallets = set(BlacklistedOperator.objects.values_list('wallet', flat=True))
@@ -71,6 +73,11 @@ def filter_providers(request,
             ).order_by('-timestamp').values('is_online')[:1]
         )
     ).filter(latest_status=True)
+
+    if minProviderAgeDays is not None:
+        minimum_age_date = timezone.now() - timedelta(days=minProviderAgeDays)
+        eligible_providers = eligible_providers.filter(created_at__lte=minimum_age_date)
+
 
     if minUptime is not None:
         eligible_providers = eligible_providers.filter(node_id__in=[
