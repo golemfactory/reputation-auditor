@@ -8,7 +8,7 @@ import json
 from collections import defaultdict
 from django.db.models import Avg, Count, Q
 from .tasks import benchmark_providers_task
-from .bulkutils import process_disk_benchmark, process_cpu_benchmark, process_memory_benchmark, process_network_benchmark
+from .bulkutils import process_disk_benchmark, process_cpu_benchmark, process_memory_benchmark, process_network_benchmark, process_gpu_task
 api = NinjaAPI(
     title="Golem Reputation API",
     version="1.0.0",
@@ -57,7 +57,7 @@ def list_provider_scores(request, network: str = 'polygon'):
 
 @api.post("/benchmark/bulk", auth=AuthBearer())
 def create_bulk_benchmark(request, bulk_data: BulkBenchmarkSchema):
-    organized_data = {"disk": [], "cpu": [], "memory": [], "network": []}
+    organized_data = {"disk": [], "cpu": [], "memory": [], "network": [], "gpu": []}
     for benchmark in bulk_data.benchmarks:
         organized_data[benchmark.type].append(benchmark.data)
 
@@ -65,12 +65,14 @@ def create_bulk_benchmark(request, bulk_data: BulkBenchmarkSchema):
     cpu_response = process_cpu_benchmark(organized_data["cpu"])
     memory_response = process_memory_benchmark(organized_data["memory"])
     network_response = process_network_benchmark(organized_data["network"])
+    gpu_response = process_gpu_task(organized_data["gpu"])
     
     return {
         "disk": disk_response,
         "cpu": cpu_response,
         "memory": memory_response,
-        "network": network_response
+        "network": network_response,
+        "gpu": gpu_response
     }
 
     

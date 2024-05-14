@@ -18,6 +18,6 @@ export interface TaskCompletion {
 }
 
 export interface Benchmark {
-    type: string // 'disk', 'cpu', 'memory'
+    type: string // 'disk', 'cpu', 'memory', 'network', 'gpu'
     data: any // This should ideally be replaced with a more specific interface based on the structure of your benchmark data
 }

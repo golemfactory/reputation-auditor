@@ -128,6 +128,14 @@ class CpuBenchmark(models.Model):
             models.Index(fields=['benchmark_name', 'created_at']),
         ]
 
+class GPUTask(models.Model):
+    provider = models.ForeignKey('Provider', on_delete=models.CASCADE)
+    name = models.CharField(max_length=255)  # Name of the GPU task
+    pcie = models.IntegerField()  # PCIe slot number
+    memory_total = models.IntegerField()  # Total memory in MB
+    memory_free = models.IntegerField()  # Free memory in MB
+    cuda_cap = models.DecimalField(max_digits=4, decimal_places=2)  # CUDA capability version
+
 class NetworkBenchmark(models.Model):
     provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  
     mbit_per_second = models.FloatField()

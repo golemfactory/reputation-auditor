@@ -149,3 +149,47 @@ def process_network_benchmark(network_data):
 
     NetworkBenchmark.objects.bulk_create(network_benchmarks)
     return len(network_benchmarks)
+
+
+from .models import Provider, DiskBenchmark, CpuBenchmark, MemoryBenchmark, NetworkBenchmark, GPUTask
+
+from decimal import Decimal
+
+# ...
+
+def process_gpu_task(data_list):
+    """
+    Processes a list of GPU task data in bulk.
+
+    :param data_list: A list of dictionaries, each containing GPU task data.
+    :return: Dictionary with operation results.
+    """
+    gpu_task_objects = []
+    provider_node_ids = {data['node_id'] for data in data_list}
+
+    # Bulk get or create Providers
+    existing_providers = {provider.node_id: provider for provider in Provider.objects.filter(node_id__in=provider_node_ids)}
+
+    # Handling providers not already in the database
+    new_providers = [Provider(node_id=node_id) for node_id in provider_node_ids if node_id not in existing_providers]
+    if new_providers:
+        Provider.objects.bulk_create(new_providers)
+        # Update cache of existing providers
+        existing_providers.update({provider.node_id: provider for provider in new_providers})
+
+    for data in data_list:
+        provider = existing_providers[data['node_id']]
+
+        gpu_task_objects.append(GPUTask(
+            provider=provider,
+            name=data['name'],
+            pcie=int(data['pcie']),
+            memory_total=int(data['memory_total']),
+            memory_free=int(data['memory_free']),
+            cuda_cap=Decimal(data['cuda_cap'])  # Use Decimal here
+        ))
+
+    # Now, bulk create all GPUTask objects
+    GPUTask.objects.bulk_create(gpu_task_objects)
+
+    return {"status": "success", "created_count": len(gpu_task_objects)}
