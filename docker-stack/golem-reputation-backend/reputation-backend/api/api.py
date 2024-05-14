@@ -13,7 +13,8 @@ api = NinjaAPI(
     title="Golem Reputation API",
     version="1.0.0",
     description="API for Golem Reputation Backend",
-    urls_namespace="api",
+    urls_namespace="api:api",
+    docs_url="/docs/"
 )
 import redis
 from datetime import datetime, timedelta
@@ -33,13 +34,71 @@ from django.db.models.functions import Coalesce
 r = redis.Redis(host='redis', port=6379, db=0)
 
 
-@api.get("/wallet/{wallet_address}")
-def walletda(request, wallet_address: str):
-    data = get_blacklisted_operators()
-    return JsonResponse(data, safe=False)
 
-@api.get("/providers/scores")
+
+@api.get("/providers/scores", tags=["Reputation"])
 def list_provider_scores(request, network: str = 'polygon'):
+    """
+    Retrieve provider scores for a specified network.
+
+    This endpoint fetches provider scores from Redis based on the specified network.
+    The scores are precomputed and stored in Redis by the `update_provider_scores` task.
+
+    Args:
+        request: The HTTP request object.
+        network (str): The network for which to retrieve provider scores. 
+                       Valid values are 'polygon', 'mainnet', 'goerli', 'mumbai', and 'holesky'.
+
+    Returns:
+        JsonResponse: A JSON response containing the provider scores or an error message.
+
+    Raises:
+        JsonResponse: If the network is not found or if the data is not available in Redis.
+
+    Example:
+        GET /providers/scores?network=polygon
+        Response:
+        {
+            "providers": [
+                {
+                    "providerId": "provider1",
+                    "scores": {
+                        "successRate": 0.95,
+                        "uptime": 0.99
+                    }
+                },
+                ...
+            ],
+            "untestedProviders": [
+                {
+                    "providerId": "provider2",
+                    "scores": {
+                        "uptime": 0.98
+                    }
+                },
+                ...
+            ],
+            "rejectedProviders": [
+                {
+                    "providerId": "provider3",
+                    "reason": "Consecutive failures: 6. Next eligible date: 2023-10-01T00:00:00Z"
+                },
+                ...
+            ],
+            "rejectedOperators": [
+                {
+                    "operator": {
+                        "walletAddress": "0x1234567890abcdef",
+                    },
+                    "reason": "CPU benchmark deviation: multi=0.25, single=0.30 over threshold 0.20. Possibly overprovisioned."
+                },
+                ...
+            ],
+            "totalRejectedProvidersMainnet": 5,
+            "totalOnlineProvidersMainnet": 50,
+            "totalOnlineProvidersTestnet": 20
+        }
+    """
     if network == 'polygon' or network == 'mainnet':
         response = r.get('provider_scores_v1_mainnet')
     elif network == 'goerli' or network == 'mumbai' or network == 'holesky':
@@ -55,7 +114,7 @@ def list_provider_scores(request, network: str = 'polygon'):
 
 
 
-@api.post("/benchmark/bulk", auth=AuthBearer())
+@api.post("/benchmark/bulk", auth=AuthBearer(), include_in_schema=False,)
 def create_bulk_benchmark(request, bulk_data: BulkBenchmarkSchema):
     organized_data = {"disk": [], "cpu": [], "memory": [], "network": [], "gpu": []}
     for benchmark in bulk_data.benchmarks:
@@ -77,7 +136,7 @@ def create_bulk_benchmark(request, bulk_data: BulkBenchmarkSchema):
 
     
 
-@api.post("/submit/task/status/bulk", auth=AuthBearer())
+@api.post("/submit/task/status/bulk", auth=AuthBearer(), include_in_schema=False,)
 def create_bulk_task_completion(request, data: List[TaskCompletionSchema]):
     task_completion_data = []
     errors = []
@@ -111,7 +170,7 @@ def create_bulk_task_completion(request, data: List[TaskCompletionSchema]):
 
 
 
-@api.get("scores/task", response=List[ProviderSuccessRate])
+@api.get("scores/task", response=List[ProviderSuccessRate], include_in_schema=False,)
 def provider_success_rate(request):
     # Get all providers
     providers = Provider.objects.annotate(
@@ -228,7 +287,16 @@ from datetime import timedelta
 from django.db.models import Count, Avg, StdDev, FloatField, Q, Subquery, OuterRef, F
 from django.db.models.functions import Cast
 from .models import BlacklistedOperator, BlacklistedProvider
-@api.get("/blacklisted-operators", response=List[str])
+@api.get(
+    "/blacklisted-operators",
+    tags=["Blacklist"],
+    summary="Retrieve a list of blacklisted operator wallets",
+    description="""
+    This endpoint retrieves a list of wallets associated with blacklisted operators.
+    The response is a list of wallet addresses that have been blacklisted.
+    """,
+    response=List[str]
+)
 def blacklisted_operators(request):
     rejected_operators = BlacklistedOperator.objects.all().values('wallet')
     # Extracting just the wallet field from each object
@@ -237,7 +305,16 @@ def blacklisted_operators(request):
     return rejected_wallets_list
 
 
-@api.get("/blacklisted-providers", response=List[str])
+@api.get(
+    "/blacklisted-providers",
+    tags=["Blacklist"],
+    summary="Retrieve a list of blacklisted provider node IDs",
+    description="""
+    This endpoint retrieves a list of node IDs associated with blacklisted providers.
+    The response is a list of node IDs that have been blacklisted.
+    """,
+    response=List[str]
+)
 def blacklisted_providers(request):
     rejected_providers = BlacklistedProvider.objects.all().values('provider__node_id')
     # Extracting just the provider__node_id field from each object
@@ -245,12 +322,12 @@ def blacklisted_providers(request):
     return rejected_node_ids_list
 
 
-@api.post("/task/start",  auth=AuthBearer())
+@api.post("/task/start",  auth=AuthBearer(), include_in_schema=False,)
 def start_task(request, payload: TaskCreateSchema):
     task = Task.objects.create(name=payload.name, started_at=timezone.now())
     return {"id": task.id, "name": task.name, "started_at": task.started_at}
 
-@api.post("/task/end/{task_id}",  auth=AuthBearer())
+@api.post("/task/end/{task_id}",  auth=AuthBearer(), include_in_schema=False,)
 def end_task(request, task_id: int, cost: float):
     try:
         task = Task.objects.get(id=task_id)
@@ -265,7 +342,7 @@ from django.shortcuts import get_object_or_404
 
 from .schemas import BulkTaskCostUpdateSchema
 
-@api.post("/tasks/update-costs", auth=AuthBearer())
+@api.post("/tasks/update-costs", auth=AuthBearer(), include_in_schema=False,)
 def bulk_update_task_costs(request, payload: BulkTaskCostUpdateSchema):
     try:
         task_completions_to_update = []
@@ -309,7 +386,7 @@ def bulk_update_task_costs(request, payload: BulkTaskCostUpdateSchema):
 
 redis_client = redis.Redis(host='redis', port=6379, db=0)  # Update with your Redis configuration
 
-@api.post("/task/offer/{task_id}", auth=AuthBearer())
+@api.post("/task/offer/{task_id}", auth=AuthBearer(), include_in_schema=False,)
 def store_offer(request, task_id: int):
     try:
         json_data = json.loads(request.body)
@@ -337,7 +414,7 @@ def store_offer(request, task_id: int):
     return JsonResponse({"status": "success", "message": "Offer stored in Redis"})
 
 
-@api.get("/benchmark", auth=AuthBearer())
+@api.get("/benchmark", auth=AuthBearer(), include_in_schema=False,)
 def start_benchmark(request):
     # benchmark_providers_task.delay()
     return {"status": "ok"}
@@ -346,8 +423,46 @@ def start_benchmark(request):
 from .scoring import get_top_80_percent_cpu_multithread_providers
 
 
-@api.get("/provider-whitelist")
-def gnv_whitelist(request, paymentNetwork: str = 'polygon',topPercent=80, maxCheckedDaysAgo=3):
+@api.get(
+    "/provider-whitelist",
+    tags=["Reputation"],
+    summary="Retrieve a whitelist of providers",
+    description="""
+    This endpoint retrieves a whitelist of providers based on their CPU multi-thread benchmark scores.
+    The providers are filtered to include only the top percentage of performers within a specified number of days.
+
+    - If the `paymentNetwork` parameter is 'polygon' or 'mainnet', it fetches the top providers from the mainnet.
+    - If the `paymentNetwork` parameter is 'goerli', 'mumbai', or 'holesky', it returns an empty list.
+    - If the `paymentNetwork` parameter does not match any of the above, it returns a 404 error.
+
+    The response includes a list of providers who are in the top specified percentage based on their CPU multi-thread benchmark scores.
+
+    Args:
+        request: The HTTP request object.
+        paymentNetwork (str): The network for which to retrieve the whitelist. 
+                              Valid values are 'polygon', 'mainnet', 'goerli', 'mumbai', and 'holesky'.
+        topPercent (int): The top percentage of providers to include in the whitelist. Default is 80.
+        maxCheckedDaysAgo (int): The maximum number of days ago to consider for the benchmark scores. Default is 3.
+
+    Returns:
+        JsonResponse: A JSON response containing the whitelist of providers or an error message.
+
+    Raises:
+        JsonResponse: If the network is not found or if the data is not available.
+
+    Example:
+        GET /provider-whitelist?paymentNetwork=polygon&topPercent=80&maxCheckedDaysAgo=3
+        Response:
+        [
+            {
+                "providerId": "provider1",
+                "cpuMultiThreadScore": 95.0
+            },
+            ...
+        ]
+    """,
+)
+def gnv_whitelist(request, paymentNetwork: str = 'polygon', topPercent=80, maxCheckedDaysAgo=3):
     if paymentNetwork == 'polygon' or paymentNetwork == 'mainnet':
         response = get_top_80_percent_cpu_multithread_providers(maxCheckedDaysAgo=maxCheckedDaysAgo, topPercent=topPercent)
     elif paymentNetwork == 'goerli' or paymentNetwork == 'mumbai' or paymentNetwork == 'holesky':

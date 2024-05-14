@@ -15,7 +15,51 @@ import redis
 r = redis.Redis(host='redis', port=6379, db=0)
 
 
-@api.get("/providers/scores")
+@api.get(
+    "/providers/scores",
+    tags=["Reputation"],
+    summary="Retrieve provider scores",
+    description="""
+    This endpoint retrieves the scores of providers based on the specified network. 
+    The scores are fetched from Redis and include various performance metrics.
+
+    - If the `network` parameter is 'polygon' or 'mainnet', it fetches scores from the 'provider_scores_v2_mainnet' key.
+    - If the `network` parameter is 'goerli', 'mumbai', or 'holesky', it fetches scores from the 'provider_scores_v2_testnet' key.
+    - If the `network` parameter does not match any of the above, it returns a 404 error.
+
+    The response includes two main sections: `testedProviders` and `untestedProviders`.
+
+    Each provider in `testedProviders` includes:
+    - `provider`: An object containing:
+        - `id`: The provider's unique identifier.
+        - `name`: The provider's name.
+        - `walletAddress`: The provider's wallet address.
+    - `scores`: An object containing:
+        - `successRate`: The percentage of successfully completed tasks.
+        - `uptime`: The percentage of time the provider has been online.
+        - `cpuSingleThreadScore`: The CPU single-thread benchmark score, normalized and penalized based on deviation.
+        - `cpuMultiThreadScore`: The CPU multi-thread benchmark score, normalized and penalized based on deviation.
+
+    Each provider in `untestedProviders` includes:
+    - `provider`: An object containing:
+        - `id`: The provider's unique identifier.
+        - `name`: The provider's name.
+        - `walletAddress`: The provider's wallet address.
+    - `scores`: An object containing:
+        - `uptime`: The percentage of time the provider has been online.
+
+    The CPU scores are normalized and penalized based on the deviation from the average performance of the latest benchmarks. The penalty weights are applied as follows:
+    - No penalty for deviations <= 5% (penalty weight = 1.0).
+    - A small penalty for deviations between 5% and 15% (penalty weight = 0.7).
+    - A larger penalty for deviations > 15% (penalty weight = 0.4).
+
+    These penalties are applied to ensure that providers with consistent performance are rewarded, while those with significant deviations from the average performance are penalized.
+
+    Additionally, the response includes information about rejected providers and operators, detailing the reasons for their rejection.
+
+    The response includes the scores of providers or an error message if the data is not available.
+    """,
+)
 def list_provider_scores(request, network: str = 'polygon'):
     if network == 'polygon' or network == 'mainnet':
         response = r.get('provider_scores_v2_mainnet')
@@ -44,7 +88,8 @@ from django.db.models import Avg
 
 @api.get(
     "/filter",
-    summary="Retrieve a list of provider IDs",
+    tags=["Reputation"],
+    summary="Retrieve a list of provider IDs filtered by various criteria",
     description="""
     This endpoint retrieves a list of active provider IDs filtered according to various performance metrics and status indicators.
     Each filter is optional and can range between minimum and maximum values provided by the client.
@@ -81,7 +126,7 @@ def filter_providers(request,
                   minNetworkDownloadSpeed: float = None, maxNetworkDownloadSpeed: float = None,
                 minPing: float = None, maxPing: float = None, pingRegion: str = "europe",
                   minSuccessRate: float = None, maxSuccessRate: float = None, 
-                  minProviderAgeDays: int = None):
+                  minProviderAge: int = None):
     
     blacklisted_providers = set(BlacklistedProvider.objects.values_list('provider_id', flat=True))
     blacklisted_op_wallets = set(BlacklistedOperator.objects.values_list('wallet', flat=True))
@@ -97,8 +142,8 @@ def filter_providers(request,
         )
     ).filter(latest_status=True)
 
-    if minProviderAgeDays is not None:
-        minimum_age_date = timezone.now() - timedelta(days=minProviderAgeDays)
+    if minProviderAge is not None:
+        minimum_age_date = timezone.now() - timedelta(days=minProviderAge)
         eligible_providers = eligible_providers.filter(created_at__lte=minimum_age_date)
 
 
@@ -388,7 +433,7 @@ class PingSchema(Schema):
     ping_udp: float
     ping_tcp: float
 
-@api.post("/pings", auth=PingSecret())
+@api.post("/pings", include_in_schema=False, auth=PingSecret())
 def create_pings(request, region: str, pings: list[PingSchema]):
     pings_to_create = []
     error_msgs = []
