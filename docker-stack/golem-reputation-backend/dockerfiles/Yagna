@@ -43,4 +43,3 @@ COPY ./check_yagna.sh /check_yagna.sh
 COPY /yagna-builds /yagna
 COPY ./reputation-backend/ /reputation-backend/
 COPY ./benchmark/ /benchmark/
-RUN cd /benchmark && npm install
