@@ -1,5 +1,7 @@
 from ninja import NinjaAPI, Path
 from django.http import JsonResponse
+from ninja import Query
+from typing import Optional
 import json
 api = NinjaAPI(
     title="Golem Reputation API",
@@ -20,12 +22,7 @@ r = redis.Redis(host='redis', port=6379, db=0)
     tags=["Reputation"],
     summary="Retrieve provider scores",
     description="""
-    This endpoint retrieves the scores of providers based on the specified network. 
-    The scores are fetched from Redis and include various performance metrics.
-
-    - If the `network` parameter is 'polygon' or 'mainnet', it fetches scores from the 'provider_scores_v2_mainnet' key.
-    - If the `network` parameter is 'goerli', 'mumbai', or 'holesky', it fetches scores from the 'provider_scores_v2_testnet' key.
-    - If the `network` parameter does not match any of the above, it returns a 404 error.
+    This endpoint retrieves the scores of providers based on the specified network. The scores include various performance metrics.
 
     The response includes two main sections: `testedProviders` and `untestedProviders`.
 
@@ -56,11 +53,9 @@ r = redis.Redis(host='redis', port=6379, db=0)
     These penalties are applied to ensure that providers with consistent performance are rewarded, while those with significant deviations from the average performance are penalized.
 
     Additionally, the response includes information about rejected providers and operators, detailing the reasons for their rejection.
-
-    The response includes the scores of providers or an error message if the data is not available.
     """,
 )
-def list_provider_scores(request, network: str = 'polygon'):
+def list_provider_scores(request, network: str = Query('polygon', description="The network parameter specifies the blockchain network for which provider scores are retrieved. Options include: 'polygon' or 'mainnet' for the main Ethereum network, 'goerli', 'mumbai', or 'holesky' for test networks. Any other value will result in a 404 error, indicating that the network is not supported.")):
     if network == 'polygon' or network == 'mainnet':
         response = r.get('provider_scores_v2_mainnet')
     elif network == 'goerli' or network == 'mumbai' or network == 'holesky':
@@ -71,7 +66,7 @@ def list_provider_scores(request, network: str = 'polygon'):
     if response:
         return json.loads(response)
     else:
-        # Handle the case where data is not yet available in Redis
+        # Handle the case where data is not yet available
         return JsonResponse({"error": "Data not available"}, status=503)
 
 
@@ -86,47 +81,49 @@ from datetime import timedelta
 from django.utils import timezone
 from django.db.models import Avg
 
+
+
 @api.get(
     "/filter",
     tags=["Reputation"],
     summary="Retrieve a list of provider IDs filtered by various criteria",
     description="""
-    This endpoint retrieves a list of active provider IDs filtered according to various performance metrics and status indicators.
-    Each filter is optional and can range between minimum and maximum values provided by the client.
-    - `minUptime` and `maxUptime` filter providers based on their uptime percentage.
-    - `minCpuMultiThreadScore` and `maxCpuMultiThreadScore` filter providers based on their CPU multi-thread benchmark scores.
-    - `minCpuSingleThreadScore` and `maxCpuSingleThreadScore` filter based on CPU single-thread benchmark scores.
-    - `minMemorySeqRead` and `maxMemorySeqRead` filter based on minimum and maximum sequential read performance in MiB/sec.
-    - `minMemorySeqWrite` and `maxMemorySeqWrite` filter based on minimum and maximum sequential write performance in MiB/sec.
-    - `minMemoryRandRead` and `maxMemoryRandRead` filter based on minimum and maximum random read performance in operations per second.
-    - `minMemoryRandWrite` and `maxMemoryRandWrite` filter based on minimum and maximum random write performance in operations per second.
-    - `minRandomReadDiskThroughput` and `maxRandomReadDiskThroughput` filter based on minimum and maximum random disk read throughput in MB/s.
-    - `minRandomWriteDiskThroughput` and `maxRandomWriteDiskThroughput` filter based on minimum and maximum random disk write throughput in MB/s.
-    - `minSequentialReadDiskThroughput` and `maxSequentialReadDiskThroughput` filter based on minimum and maximum sequential disk read throughput in MB/s.
-    - `minSequentialWriteDiskThroughput` and `maxSequentialWriteDiskThroughput` filter based on minimum and maximum sequential disk write throughput in MB/s.
-    - `minNetworkDownloadSpeed` and `maxNetworkDownloadSpeed` filter based on minimum and maximum network download speed in Mbit/s.
-    - `minPing` and `maxPing` filter based on minimum and maximum average of the last 5 pings in milliseconds. The `pingRegion` parameter is used to filter by region (default is 'europe').
-    - `minSuccessRate` and `maxSuccessRate` filter providers by the percentage of successfully completed tasks.
-    - `minProviderAge` filters providers based on the number of days since their creation. This means that if you're in need of providers that have been around for a while, you can use this filter to exclude newer providers. Uptime is calculated based on the time since the provider was created, so this filter can be used in conjunction with the `minUptime` filter to ensure that you're only getting providers that have been around for a while and have a good uptime percentage.
-    Providers are only included in the result if they are currently online and not blacklisted.
+    This endpoint retrieves a list of active provider IDs filtered according to various performance metrics and status indicators. Each filter is optional and can be specified with minimum and maximum values by the client. Providers are only included in the result if they are currently online and not blacklisted. The filters allow for detailed querying based on metrics such as uptime, CPU performance, memory and disk throughput, network speed, and task success rates.
     """,
 )
-def filter_providers(request, 
-                  minUptime: float = None, maxUptime: float = None, 
-                  minCpuMultiThreadScore: float = None, maxCpuMultiThreadScore: float = None, 
-                  minCpuSingleThreadScore: float = None, maxCpuSingleThreadScore: float = None, 
-                  minMemorySeqRead: float = None, maxMemorySeqRead: float = None,
-                  minMemorySeqWrite: float = None, maxMemorySeqWrite: float = None,
-                  minMemoryRandRead: float = None, maxMemoryRandRead: float = None,
-                  minMemoryRandWrite: float = None, maxMemoryRandWrite: float = None,
-                  minRandomReadDiskThroughput: float = None, maxRandomReadDiskThroughput: float = None,
-                  minRandomWriteDiskThroughput: float = None, maxRandomWriteDiskThroughput: float = None,
-                  minSequentialReadDiskThroughput: float = None, maxSequentialReadDiskThroughput: float = None,
-                  minSequentialWriteDiskThroughput: float = None, maxSequentialWriteDiskThroughput: float = None,
-                  minNetworkDownloadSpeed: float = None, maxNetworkDownloadSpeed: float = None,
-                minPing: float = None, maxPing: float = None, pingRegion: str = "europe",
-                  minSuccessRate: float = None, maxSuccessRate: float = None, 
-                  minProviderAge: int = None):
+def filter_providers(
+    request,
+    minProviderAge: Optional[int] = Query(None, description="Minimum number of days since provider creation. This filter helps exclude newer providers that may show a high uptime percentage simply because they've been operational for a short period, such as a provider with 99% uptime over two days, which may not be indicative of long-term reliability for requestors looking to run long-running services."),
+    minUptime: Optional[float] = Query(None, description="Minimum uptime percentage"),
+    maxUptime: Optional[float] = Query(None, description="Maximum uptime percentage"),
+    minCpuMultiThreadScore: Optional[float] = Query(None, description="Minimum CPU multi-thread benchmark score"),
+    maxCpuMultiThreadScore: Optional[float] = Query(None, description="Maximum CPU multi-thread benchmark score"),
+    minCpuSingleThreadScore: Optional[float] = Query(None, description="Minimum CPU single-thread benchmark score"),
+    maxCpuSingleThreadScore: Optional[float] = Query(None, description="Maximum CPU single-thread benchmark score"),
+    minMemorySeqRead: Optional[float] = Query(None, description="Minimum sequential read performance in MiB/sec"),
+    maxMemorySeqRead: Optional[float] = Query(None, description="Maximum sequential read performance in MiB/sec"),
+    minMemorySeqWrite: Optional[float] = Query(None, description="Minimum sequential write performance in MiB/sec"),
+    maxMemorySeqWrite: Optional[float] = Query(None, description="Maximum sequential write performance in MiB/sec"),
+    minMemoryRandRead: Optional[float] = Query(None, description="Minimum random read performance in MiB/sec"),
+maxMemoryRandRead: Optional[float] = Query(None, description="Maximum random read performance in MiB/sec"),
+minMemoryRandWrite: Optional[float] = Query(None, description="Minimum random write performance in MiB/sec"),
+maxMemoryRandWrite: Optional[float] = Query(None, description="Maximum random write performance in MiB/sec"),
+    minRandomReadDiskThroughput: Optional[float] = Query(None, description="Minimum random disk read throughput in MB/s"),
+    maxRandomReadDiskThroughput: Optional[float] = Query(None, description="Maximum random disk read throughput in MB/s"),
+    minRandomWriteDiskThroughput: Optional[float] = Query(None, description="Minimum random disk write throughput in MB/s"),
+    maxRandomWriteDiskThroughput: Optional[float] = Query(None, description="Maximum random disk write throughput in MB/s"),
+    minSequentialReadDiskThroughput: Optional[float] = Query(None, description="Minimum sequential disk read throughput in MB/s"),
+    maxSequentialReadDiskThroughput: Optional[float] = Query(None, description="Maximum sequential disk read throughput in MB/s"),
+    minSequentialWriteDiskThroughput: Optional[float] = Query(None, description="Minimum sequential disk write throughput in MB/s"),
+    maxSequentialWriteDiskThroughput: Optional[float] = Query(None, description="Maximum sequential disk write throughput in MB/s"),
+    minNetworkDownloadSpeed: Optional[float] = Query(None, description="Minimum network download speed in Mbit/s"),
+    maxNetworkDownloadSpeed: Optional[float] = Query(None, description="Maximum network download speed in Mbit/s"),
+    minPing: Optional[float] = Query(None, description="Minimum average of the last 5 pings in milliseconds, filtered by the specified region"),
+    maxPing: Optional[float] = Query(None, description="Maximum average of the last 5 pings in milliseconds, filtered by the specified region"),
+    pingRegion: str = Query("europe", description="Region for ping filter. Options include 'europe', 'asia', and 'us'."),
+    minSuccessRate: Optional[float] = Query(None, description="Minimum percentage of successfully completed tasks"),
+    maxSuccessRate: Optional[float] = Query(None, description="Maximum percentage of successfully completed tasks"),
+):
     
     blacklisted_providers = set(BlacklistedProvider.objects.values_list('provider_id', flat=True))
     blacklisted_op_wallets = set(BlacklistedOperator.objects.values_list('wallet', flat=True))

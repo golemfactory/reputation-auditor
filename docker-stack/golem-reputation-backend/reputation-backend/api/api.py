@@ -30,30 +30,29 @@ class AuthBearer(HttpBearer):
 
 from .scoring import get_provider_benchmark_scores
 from django.db.models.functions import Coalesce
-
+from ninja import Query
+from typing import Optional
 r = redis.Redis(host='redis', port=6379, db=0)
 
 
 
 
 @api.get("/providers/scores", tags=["Reputation"])
-def list_provider_scores(request, network: str = 'polygon'):
+def list_provider_scores(request, network: str = Query('polygon', description="The network parameter specifies the blockchain network for which provider scores are retrieved. Valid options include 'polygon', 'mainnet' for the main Ethereum network, 'goerli', 'mumbai', or 'holesky' for test networks. Any other value will result in a 404 error, indicating that the network is not supported.")):
     """
     Retrieve provider scores for a specified network.
 
-    This endpoint fetches provider scores from Redis based on the specified network.
-    The scores are precomputed and stored in Redis by the `update_provider_scores` task.
+    This endpoint fetches provider scores based on the specified network. The scores are precomputed and stored, ready for retrieval.
 
     Args:
         request: The HTTP request object.
         network (str): The network for which to retrieve provider scores. 
-                       Valid values are 'polygon', 'mainnet', 'goerli', 'mumbai', and 'holesky'.
 
     Returns:
         JsonResponse: A JSON response containing the provider scores or an error message.
 
     Raises:
-        JsonResponse: If the network is not found or if the data is not available in Redis.
+        JsonResponse: If the network is not found or if the data is not available.
 
     Example:
         GET /providers/scores?network=polygon
@@ -109,7 +108,7 @@ def list_provider_scores(request, network: str = 'polygon'):
     if response:
         return json.loads(response)
     else:
-        # Handle the case where data is not yet available in Redis
+        # Handle the case where data is not yet available
         return JsonResponse({"error": "Data not available"}, status=503)
 
 
@@ -431,38 +430,15 @@ from .scoring import get_top_80_percent_cpu_multithread_providers
     This endpoint retrieves a whitelist of providers based on their CPU multi-thread benchmark scores.
     The providers are filtered to include only the top percentage of performers within a specified number of days.
 
-    - If the `paymentNetwork` parameter is 'polygon' or 'mainnet', it fetches the top providers from the mainnet.
-    - If the `paymentNetwork` parameter is 'goerli', 'mumbai', or 'holesky', it returns an empty list.
-    - If the `paymentNetwork` parameter does not match any of the above, it returns a 404 error.
-
-    The response includes a list of providers who are in the top specified percentage based on their CPU multi-thread benchmark scores.
-
-    Args:
-        request: The HTTP request object.
-        paymentNetwork (str): The network for which to retrieve the whitelist. 
-                              Valid values are 'polygon', 'mainnet', 'goerli', 'mumbai', and 'holesky'.
-        topPercent (int): The top percentage of providers to include in the whitelist. Default is 80.
-        maxCheckedDaysAgo (int): The maximum number of days ago to consider for the benchmark scores. Default is 3.
-
-    Returns:
-        JsonResponse: A JSON response containing the whitelist of providers or an error message.
-
-    Raises:
-        JsonResponse: If the network is not found or if the data is not available.
-
-    Example:
-        GET /provider-whitelist?paymentNetwork=polygon&topPercent=80&maxCheckedDaysAgo=3
-        Response:
-        [
-            {
-                "providerId": "provider1",
-                "cpuMultiThreadScore": 95.0
-            },
-            ...
-        ]
+    The response includes a list of provider ids who are in the top specified percentage based on their CPU multi-thread benchmark scores.
     """,
 )
-def gnv_whitelist(request, paymentNetwork: str = 'polygon', topPercent=80, maxCheckedDaysAgo=3):
+def gnv_whitelist(
+    request,
+    paymentNetwork: str = Query('polygon', description="The paymentNetwork parameter specifies the blockchain network for which the whitelist of providers is retrieved. Options include: 'polygon' or 'mainnet' for the main Ethereum network, 'goerli', 'mumbai', or 'holesky' for test networks. Any other value will result in a 404 error, indicating that the network is not supported."),
+    topPercent: int = Query(80, description="The top percentage of providers to include in the whitelist."),
+    maxCheckedDaysAgo: int = Query(3, description="The maximum number of days ago to consider for the benchmark scores.")
+):
     if paymentNetwork == 'polygon' or paymentNetwork == 'mainnet':
         response = get_top_80_percent_cpu_multithread_providers(maxCheckedDaysAgo=maxCheckedDaysAgo, topPercent=topPercent)
     elif paymentNetwork == 'goerli' or paymentNetwork == 'mumbai' or paymentNetwork == 'holesky':
@@ -473,5 +449,5 @@ def gnv_whitelist(request, paymentNetwork: str = 'polygon', topPercent=80, maxCh
     if response or response == []:
         return response
     else:
-        # Handle the case where data is not yet available in Redis
+        # Handle the case where data is not yet available
         return JsonResponse({"error": "Data not available"}, status=503)
