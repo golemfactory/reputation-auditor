@@ -86,26 +86,43 @@ def parse_ping_time(ping_time_str):
 # Function to execute command and process output
 async def ping_provider(provider_id):
     try:
-        # Use asyncio.create_subprocess_exec to run the command asynchronously
-        process = await asyncio.create_subprocess_exec(
-            "yagna", "net", "ping", provider_id, "--json",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
+        results = []
 
-        # Wait for the command to complete and capture the output
-        stdout, stderr = await process.communicate()
-        
-        if stdout:
-            result = json.loads(stdout.decode())
-            # Parse ping times into milliseconds
-            for ping_data in result:
-                ping_data['ping (tcp)'] = parse_ping_time(ping_data['ping (tcp)'])
-                ping_data['ping (udp)'] = parse_ping_time(ping_data['ping (udp)'])
-            return result
+        for _ in range(2):
+            # Use asyncio.create_subprocess_exec to run the command asynchronously
+            process = await asyncio.create_subprocess_exec(
+                "yagna", "net", "ping", provider_id, "--json",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+
+            # Wait for the command to complete and capture the output
+            stdout, stderr = await process.communicate()
+            
+            if stdout:
+                result = json.loads(stdout.decode())
+                # Parse ping times into milliseconds
+                for ping_data in result:
+                    ping_data['ping (tcp)'] = parse_ping_time(ping_data['ping (tcp)'])
+                    ping_data['ping (udp)'] = parse_ping_time(ping_data['ping (udp)'])
+                results.append(result)
+            else:
+                print("ERROR pinging", stderr.decode())
+                return False
+
+        # Compare the two results and return the one with the lowest ping times
+        if len(results) == 2:
+            final_result = []
+            for ping_data_1, ping_data_2 in zip(results[0], results[1]):
+                final_result.append({
+                    'nodeId': ping_data_1['nodeId'],
+                    'p2p': ping_data_1['p2p'],
+                    'ping (tcp)': min(ping_data_1['ping (tcp)'], ping_data_2['ping (tcp)']),
+                    'ping (udp)': min(ping_data_1['ping (udp)'], ping_data_2['ping (udp)'])
+                })
+            return final_result
         else:
-            print("ERROR pinging", stderr.decode())
-            return False
+            return results[0] if results else False
         
     except asyncio.TimeoutError as e:
         print("Timeout reached while checking node status", e)
