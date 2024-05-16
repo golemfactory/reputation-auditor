@@ -1,0 +1,19 @@
+FROM python:3.10-alpine
+ENV PYTHONUNBUFFERED 1
+
+
+
+
+RUN pip install aiohttp
+RUN mkdir -p $HOME/.local/share/ya-installer/terms
+RUN touch $HOME/.local/share/ya-installer/terms/testnet-01.tag
+ENV PATH=${PATH}:/root/.local/bin/:/root/.local/
+RUN mkdir /root/.local/bin
+ENV MARKET_DB_CLEANUP_INTERVAL=60min
+COPY ./check_yagna.sh /check_yagna.sh
+COPY /yagna-builds /yagna
+COPY p2p-ping.py /p2p-ping.py
+COPY reputation-backend/start.sh /start.sh
+
+
+

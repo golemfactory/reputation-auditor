@@ -429,6 +429,7 @@ class PingSchema(Schema):
     provider_id: str  # Change the type to str to match node_id
     ping_udp: float
     ping_tcp: float
+    is_p2p: bool
 
 @api.post("/pings", include_in_schema=False, auth=PingSecret())
 def create_pings(request, region: str, pings: list[PingSchema]):
@@ -442,6 +443,7 @@ def create_pings(request, region: str, pings: list[PingSchema]):
             provider = Provider.objects.get(node_id=provider_id)  # Fetch the Provider instance using node_id
             pings_to_create.append(PingResult(
             provider=provider,
+            is_p2p=ping_data.is_p2p,
             ping_udp=ping_data.ping_udp,
             ping_tcp=ping_data.ping_tcp,
             created_at=timezone.now(),

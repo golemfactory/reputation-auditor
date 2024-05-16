@@ -188,34 +188,6 @@ services:
                 condition: any
         networks:
             - reputation
-    ping_worker_p2p:
-        command:
-            [
-                "/bin/sh",
-                "-c",
-                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q pingerp2p -c 1",
-            ]
-        image: ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:latest
-        env_file:
-            - ./.envs/.django
-        ports:
-            - "11500:11500"
-        healthcheck:
-            test: /check_yagna.sh || exit 1
-            interval: 15s
-            timeout: 5s
-            retries: 3
-            start_period: 15s
-        deploy:
-            replicas: 1
-            update_config:
-                parallelism: 1
-                failure_action: rollback
-                delay: 10s
-            restart_policy:
-                condition: any
-        networks:
-            - reputation
     celery_beat:
         image: ghcr.io/golemfactory/golem-reputation-backend-celery-beat:latest
         command: celery -A core beat -l INFO
