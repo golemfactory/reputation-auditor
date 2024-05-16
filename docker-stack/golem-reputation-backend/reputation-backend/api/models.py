@@ -18,6 +18,11 @@ class Provider(models.Model):
     payment_addresses = models.JSONField(default=dict, blank=True, null=True)  # JSON object with payment addresses
     network = models.CharField(max_length=50, default='mainnet')  # 'mainnet' or 'testnet'
     created_at = models.DateTimeField(auto_now_add=True, null=True)
+    class Meta:
+        indexes = [
+            models.Index(fields=['network']),
+            models.Index(fields=['created_at']),
+        ]
 
 class Offer(models.Model):
     provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  # Link to a Provider
@@ -26,17 +31,32 @@ class Offer(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     accepted = models.BooleanField(default=False)
     reason = models.CharField(max_length=255, blank=True, null=True)  # Reason for rejection
+    class Meta:
+        indexes = [
+            models.Index(fields=['provider']),
+            models.Index(fields=['task']),
+            models.Index(fields=['created_at']),
+        ]
 
 class BlacklistedOperator(models.Model):
     wallet = models.CharField(max_length=255, unique=True)  # Payment address
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     reason = models.CharField(max_length=255, blank=True, null=True)  # Reason for blacklisting
+    class Meta:
+        indexes = [
+            models.Index(fields=['wallet']),
+            models.Index(fields=['created_at']),
+        ]
 
 class BlacklistedProvider(models.Model):
     provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  # Link to a Provider
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     reason = models.CharField(max_length=255, blank=True, null=True)  # Reason for blacklisting
-
+    class Meta:
+        indexes = [
+            models.Index(fields=['provider']),
+            models.Index(fields=['created_at']),
+        ]
 
 class DiskBenchmark(models.Model):
     provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  
@@ -146,7 +166,11 @@ class Task(models.Model):
     started_at = models.DateTimeField(default=timezone.now)  # When the task was started
     finished_at = models.DateTimeField(null=True)  # When the task was finished
     cost = models.FloatField(null=True)  # Cost of the task in GLM
-
+    class Meta:
+        indexes = [
+            models.Index(fields=['started_at']),
+            models.Index(fields=['finished_at']),
+        ]
 
 class TaskCompletion(models.Model):
     provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  # Link to a Node model
@@ -173,7 +197,12 @@ class PingResult(models.Model):
     ping_udp = models.IntegerField()  # Ping result for UDP, e.g., 96
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     region = models.CharField(max_length=255, default=os.environ.get('REGION', 'local'))
-
+    class Meta:
+        indexes = [
+            models.Index(fields=['provider']),
+            models.Index(fields=['created_at']),
+            models.Index(fields=['region']),
+        ]
 
 class PingResultP2P(models.Model):
     provider = models.ForeignKey(Provider, on_delete=models.CASCADE)  # Link to a Provider

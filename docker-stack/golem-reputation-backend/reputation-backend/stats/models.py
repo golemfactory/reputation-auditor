@@ -29,6 +29,9 @@ class DailyProviderStats(models.Model):
     class Meta:
         verbose_name = "Daily Provider Statistic"
         verbose_name_plural = "Daily Provider Statistics"
+        indexes = [
+            models.Index(fields=['date']),
+        ]
 
     def __str__(self):
         return f"Provider Stats for {self.date.strftime('%Y-%m-%d')}"
