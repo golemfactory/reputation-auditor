@@ -52,6 +52,7 @@ USE_TZ = False
 
 TIME_ZONE = "Europe/Copenhagen"
 
+CELERY_TASK_RESULT_EXPIRES = 3600  # Expire tasks after 1 hour
 
 # Application definition
 
