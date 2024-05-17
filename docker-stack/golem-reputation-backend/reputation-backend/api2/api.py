@@ -455,3 +455,32 @@ def create_pings(request, region: str, pings: list[PingSchema]):
     
     PingResult.objects.bulk_create(pings_to_create)
     return {"message": "Pings created"}
+
+
+from django.db.models.fields.json import KeyTextTransform
+
+@api.get(
+    "/providers/check_blacklist",
+    tags=["Reputation"],
+    summary="Check if a provider is blacklisted",
+    description="This endpoint checks if a provider is blacklisted based on the provided node_id.",
+)
+def check_blacklist(request, node_id: str = Query(..., description="The node_id of the provider to check.")):
+    # Check if the provider is blacklisted
+    is_blacklisted_provider = BlacklistedProvider.objects.filter(provider__node_id=node_id).exists()
+    
+    # Extract the wallet address from the JSON field for comparison
+    wallet_address = Provider.objects.filter(node_id=node_id).annotate(
+        wallet=KeyTextTransform('golem.com.payment.platform.erc20-mainnet-glm.address', 'payment_addresses')
+    ).values_list('wallet', flat=True).first()
+    
+    # Check if the provider's wallet is blacklisted
+    is_blacklisted_operator = False
+    if wallet_address:
+        is_blacklisted_operator = BlacklistedOperator.objects.filter(wallet=wallet_address).exists()
+    
+    return JsonResponse({
+        "node_id": node_id,
+        "is_blacklisted_provider": is_blacklisted_provider,
+        "is_blacklisted_wallet": is_blacklisted_operator
+    })
