@@ -29,16 +29,15 @@ async def async_bulk_create_ping_results(chunk_data, p2p):
         return
 
     async with aiohttp.ClientSession() as session:
-        try:
-            json_payload = [
-                {
-                    'provider_id': data.provider_id,
-                    'ping_udp': data.ping_udp,
-                    'ping_tcp': data.ping_tcp
-                } for data in chunk_data
-            ]
-        except:
-            print("Error in chunk_data", chunk_data)
+        json_payload = [
+            {
+                'provider_id': data['provider_id'],
+                'ping_udp': data['ping_udp'],
+                'ping_tcp': data['ping_tcp'],
+                'is_p2p': data['is_p2p']
+            } for data in chunk_data
+        ]
+
         print("Sending data:", json_payload)
 
         request_url = f"{endpoint}?region={region}"
@@ -57,14 +56,22 @@ async def async_bulk_create_ping_results(chunk_data, p2p):
 
 # Convert ping time strings into milliseconds
 def parse_ping_time(ping_time_str):
-    total_ms = 0
-    parts = ping_time_str.split(' ')
-    for part in parts:
-        if 'ms' in part:
-            total_ms += int(part.replace('ms', ''))
-        elif 's' in part:
-            total_ms += int(part.replace('s', '')) * 1000
-    return total_ms
+    """Converts a ping time string into milliseconds."""
+    if ping_time_str is None:
+        return None
+
+    try:
+        # Check if the input string is a valid float
+        return int(float(ping_time_str))
+    except ValueError:
+        total_ms = 0
+        parts = ping_time_str.split(' ')
+        for part in parts:
+            if 'ms' in part:
+                total_ms += int(part.replace('ms', ''))
+            elif 's' in part:
+                total_ms += int(part.replace('s', '')) * 1000
+        return total_ms
 
 # Ping a provider and process the result
 async def ping_provider(provider_id):
@@ -79,7 +86,7 @@ async def ping_provider(provider_id):
             )
 
             stdout, stderr = await process.communicate()
-            
+
             if stdout:
                 result = json.loads(stdout.decode())
                 for ping_data in result:
@@ -93,17 +100,20 @@ async def ping_provider(provider_id):
         if len(results) == 2:
             final_result = []
             for ping_data_1, ping_data_2 in zip(results[0], results[1]):
-                print(f"Are we P2P ? {ping_data_1['p2p']}, {ping_data_2['p2p']}")
-                final_result.append({
-                    'nodeId': ping_data_1['nodeId'],
-                    'p2p': ping_data_1['p2p'],
-                    'ping (tcp)': min(ping_data_1['ping (tcp)'], ping_data_2['ping (tcp)']),
-                    'ping (udp)': min(ping_data_1['ping (udp)'], ping_data_2['ping (udp)'])
-                })
-            return final_result
+                if ping_data_1['ping (tcp)'] is not None and ping_data_1['ping (tcp)'] > 0 and \
+                   ping_data_1['ping (udp)'] is not None and ping_data_1['ping (udp)'] > 0 and \
+                   ping_data_2['ping (tcp)'] is not None and ping_data_2['ping (tcp)'] > 0 and \
+                   ping_data_2['ping (udp)'] is not None and ping_data_2['ping (udp)'] > 0:
+                    final_result.append({
+                        'nodeId': ping_data_1['nodeId'],
+                        'p2p': ping_data_1['p2p'],
+                        'ping (tcp)': min(ping_data_1['ping (tcp)'], ping_data_2['ping (tcp)']),
+                        'ping (udp)': min(ping_data_1['ping (udp)'], ping_data_2['ping (udp)'])
+                    })
+            return final_result if final_result else False
         else:
-            return results[0] if results else False
-        
+            return [ping_data for ping_data in results[0] if ping_data['ping (tcp)'] is not None and ping_data['ping (tcp)'] > 0 and ping_data['ping (udp)'] is not None and ping_data['ping (udp)'] > 0] if results else False
+
     except asyncio.TimeoutError as e:
         print("Timeout reached while checking node status", e)
         return False
@@ -125,13 +135,14 @@ async def ping_providers(p2p):
             if isinstance(result, Exception):
                 print(f"An error occurred: {result}")
                 continue
-            for ping_data in result:
-                chunk_data.append({
-                    'provider_id': ping_data['nodeId'],
-                    'is_p2p': ping_data['p2p'],
-                    'ping_tcp': ping_data['ping (tcp)'],
-                    'ping_udp': ping_data['ping (udp)'],
-                })
+            if result:
+                for ping_data in result:
+                    chunk_data.append({
+                        'provider_id': ping_data['nodeId'],
+                        'is_p2p': ping_data['p2p'],
+                        'ping_tcp': ping_data['ping (tcp)'],
+                        'ping_udp': ping_data['ping (udp)'],
+                    })
 
         all_chunk_data.extend(chunk_data)
 

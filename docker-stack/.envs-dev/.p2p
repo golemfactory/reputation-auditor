@@ -1,0 +1,3 @@
+REPUTATION_PING_ENDPOINT=http://api.localhost/v2/pings
+REGION=us
+PING_SECRET=123
