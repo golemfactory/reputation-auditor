@@ -483,3 +483,107 @@ def check_blacklist(request, node_id: str = Query(..., description="The node_id 
         "is_blacklisted_provider": is_blacklisted_provider,
         "is_blacklisted_wallet": is_blacklisted_operator
     })
+
+
+
+
+
+@api.get(
+    "/providers/{node_id}/scores",
+    tags=["Reputation"],
+    summary="Retrieve all scores for a specific provider",
+    description="This endpoint retrieves all the scores for a specific provider based on the provided node_id."
+)
+def get_provider_scores(request, node_id: str = Path(..., description="The node_id of the provider to retrieve scores for.")):
+    try:
+        provider = Provider.objects.get(node_id=node_id)
+    except Provider.DoesNotExist:
+        return JsonResponse({"error": "Provider not found"}, status=404)
+
+    scores = {}
+
+    # Uptime
+    scores['uptime'] = calculate_uptime(provider.node_id)
+
+    # CPU Multi-thread Score
+    scores['cpuMultiThreadScore'] = CpuBenchmark.objects.filter(
+        provider=provider,
+        benchmark_name="CPU Multi-thread Benchmark"
+    ).order_by('-created_at').values_list('events_per_second', flat=True).first()
+
+    # CPU Single-thread Score
+    scores['cpuSingleThreadScore'] = CpuBenchmark.objects.filter(
+        provider=provider,
+        benchmark_name="CPU Single-thread Benchmark"
+    ).order_by('-created_at').values_list('events_per_second', flat=True).first()
+
+    # Success Rate
+    successful_tasks = TaskCompletion.objects.filter(provider=provider, is_successful=True).count()
+    total_tasks = TaskCompletion.objects.filter(provider=provider).count()
+    scores['successRate'] = (successful_tasks / total_tasks * 100) if total_tasks > 0 else None
+
+    # Memory Benchmarks
+    scores['memorySeqRead'] = MemoryBenchmark.objects.filter(
+        provider=provider,
+        benchmark_name="Sequential_Read_Performance__Single_Thread_"
+    ).order_by('-created_at').values_list('throughput_mi_b_sec', flat=True).first()
+
+    scores['memorySeqWrite'] = MemoryBenchmark.objects.filter(
+        provider=provider,
+        benchmark_name="Sequential_Write_Performance__Single_Thread_"
+    ).order_by('-created_at').values_list('throughput_mi_b_sec', flat=True).first()
+
+    scores['memoryRandRead'] = MemoryBenchmark.objects.filter(
+        provider=provider,
+        benchmark_name="Random_Read_Performance__Multi_threaded_"
+    ).order_by('-created_at').values_list('throughput_mi_b_sec', flat=True).first()
+
+    scores['memoryRandWrite'] = MemoryBenchmark.objects.filter(
+        provider=provider,
+        benchmark_name="Random_Write_Performance__Multi_threaded_"
+    ).order_by('-created_at').values_list('throughput_mi_b_sec', flat=True).first()
+
+    # Disk Benchmarks
+    scores['randomReadDiskThroughput'] = DiskBenchmark.objects.filter(
+        provider=provider,
+        benchmark_name="FileIO_rndrd"
+    ).order_by('-created_at').values_list('read_throughput_mb_ps', flat=True).first()
+
+    scores['randomWriteDiskThroughput'] = DiskBenchmark.objects.filter(
+        provider=provider,
+        benchmark_name="FileIO_rndwr"
+    ).order_by('-created_at').values_list('write_throughput_mb_ps', flat=True).first()
+
+    scores['sequentialReadDiskThroughput'] = DiskBenchmark.objects.filter(
+        provider=provider,
+        benchmark_name="FileIO_seqrd"
+    ).order_by('-created_at').values_list('read_throughput_mb_ps', flat=True).first()
+
+    scores['sequentialWriteDiskThroughput'] = DiskBenchmark.objects.filter(
+        provider=provider,
+        benchmark_name="FileIO_seqwr"
+    ).order_by('-created_at').values_list('write_throughput_mb_ps', flat=True).first()
+
+    # Network Download Speed
+    scores['networkDownloadSpeed'] = NetworkBenchmark.objects.filter(
+        provider=provider
+    ).order_by('-created_at').values_list('mbit_per_second', flat=True).first()
+
+    # Ping
+    regions = ["europe", "asia", "us"]
+    scores['ping'] = {}
+
+    for region in regions:
+        scores['ping'][region] = {
+            "p2p": PingResult.objects.filter(
+                provider=provider,
+                region=region,
+                is_p2p=True
+            ).order_by('-created_at').values_list('ping_udp', flat=True)[:5].aggregate(avg_ping=Avg('ping_udp'))['avg_ping'],
+            "non_p2p": PingResult.objects.filter(
+                provider=provider,
+                region=region,
+                is_p2p=False
+            ).order_by('-created_at').values_list('ping_udp', flat=True)[:5].aggregate(avg_ping=Avg('ping_udp'))['avg_ping']
+        }
+    return JsonResponse({"node_id": node_id, "scores": scores})
