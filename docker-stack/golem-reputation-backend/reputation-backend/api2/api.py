@@ -123,7 +123,8 @@ maxMemoryRandWrite: Optional[float] = Query(None, description="Maximum random wr
     pingRegion: str = Query("europe", description="Region for ping filter. Options include 'europe', 'asia', and 'us'."),
     minSuccessRate: Optional[float] = Query(None, description="Minimum percentage of successfully completed tasks"),
     maxSuccessRate: Optional[float] = Query(None, description="Maximum percentage of successfully completed tasks"),
-):
+    is_p2p: bool = Query(False, description="Specify whether the pings should be peer-to-peer (p2p). If True, pings are conducted from open ports; if False, they are routed through the relay. Defaults to False.")):
+
     
     blacklisted_providers = set(BlacklistedProvider.objects.values_list('provider_id', flat=True))
     blacklisted_op_wallets = set(BlacklistedOperator.objects.values_list('wallet', flat=True))
@@ -383,15 +384,14 @@ maxMemoryRandWrite: Optional[float] = Query(None, description="Maximum random wr
             )
         ).filter(latest_network_download_speed__lte=maxNetworkDownloadSpeed)
 
-    ping_filter = Q(region=pingRegion)
+    ping_filter = Q(region=pingRegion) & Q(is_p2p=is_p2p)
 
     if minPing is not None:
         eligible_providers = eligible_providers.annotate(
             avg_ping_udp=Subquery(
                 PingResult.objects.filter(
-                    ping_filter,  # Apply the region filter directly
+                    ping_filter,
                     provider=OuterRef('pk'),
-                    
                 ).order_by('-created_at').values('ping_udp')[:5]
                 .annotate(avg_value=Avg('ping_udp'))
                 .values('avg_value')[:1]
@@ -402,9 +402,8 @@ maxMemoryRandWrite: Optional[float] = Query(None, description="Maximum random wr
         eligible_providers = eligible_providers.annotate(
             avg_ping_udp=Subquery(
                 PingResult.objects.filter(
-                    ping_filter,  # Apply the region filter directly
+                    ping_filter,
                     provider=OuterRef('pk'),
-                    
                 ).order_by('-created_at').values('ping_udp')[:5]
                 .annotate(avg_value=Avg('ping_udp'))
                 .values('avg_value')[:1]
