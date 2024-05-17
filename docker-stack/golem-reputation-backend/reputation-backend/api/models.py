@@ -201,7 +201,9 @@ class PingResult(models.Model):
         indexes = [
             models.Index(fields=['provider']),
             models.Index(fields=['created_at']),
+            models.Index(fields=['is_p2p']),
             models.Index(fields=['region']),
+            models.Index(fields=['provider', 'is_p2p', 'region']),  # Composite index
         ]
 
 
