@@ -331,7 +331,14 @@ def get_provider_details(request, node_id: str):
     task_participations_sorted = sorted(
         task_participations, key=lambda x: x.task_id)
 
+    # Calculate overall task success rate
+    successful_tasks = TaskCompletion.objects.filter(provider=provider, is_successful=True).count()
+    total_tasks = TaskCompletion.objects.filter(provider=provider).count()
+    success_rate = (successful_tasks / total_tasks * 100) if total_tasks > 0 else None
+    
+
     return ProviderDetailsResponseSchema(
         offer_history=[],  # Populate as needed
-        task_participation=task_participations_sorted
+        task_participation=task_participations_sorted,
+        success_rate=success_rate  # Add success rate to the response
     )

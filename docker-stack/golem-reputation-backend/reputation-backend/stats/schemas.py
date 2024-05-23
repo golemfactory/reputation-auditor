@@ -19,3 +19,4 @@ class TaskParticipationSchema(Schema):
 class ProviderDetailsResponseSchema(Schema):
     offer_history: List[OfferHistorySchema]
     task_participation: List[TaskParticipationSchema]
+    success_rate: Optional[float] = None
