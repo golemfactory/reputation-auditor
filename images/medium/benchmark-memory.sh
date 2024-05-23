@@ -78,7 +78,7 @@ function run_and_parse_sysbench() {
         latency_95th_percentile_ms: $latency95thPercentileMs,
         sum_latency_ms: $sumLatencyMs,
         events: $events,
-        execution_time_sec: $executionTimeSec
+        execution_time_sec: $executionTimeSec,
         memory_size_gb: $memoryGB
     }')
 

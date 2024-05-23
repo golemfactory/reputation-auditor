@@ -13,8 +13,8 @@
                 "os": "linux",
                 "arch": "x86_64"
             },
-            "hash": "sha3:628d65c6d6d508552d6d687a035a166fffba6cff54eafa8107bb558e",
-            "urls": ["http://registry.golem.network/v1/image/download?hash=628d65c6d6d508552d6d687a035a166fffba6cff54eafa8107bb558e"]
+            "hash": "sha3:0b4dd6d24545f6700f999882cb343eca20145c9e6be8019f22e69b0b",
+            "urls": ["http://registry.golem.network/v1/image/download?hash=0b4dd6d24545f6700f999882cb343eca20145c9e6be8019f22e69b0b"]
         }
     ],
     "compManifest": {
