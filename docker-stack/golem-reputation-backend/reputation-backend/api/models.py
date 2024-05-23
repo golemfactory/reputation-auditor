@@ -75,6 +75,7 @@ class DiskBenchmark(models.Model):
     avg_latency_ms = models.FloatField()
     max_latency_ms = models.FloatField()
     latency_95th_percentile_ms = models.FloatField()
+    disk_size_gb = models.FloatField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     class Meta:
         indexes = [
@@ -110,6 +111,7 @@ class MemoryBenchmark(models.Model):
 
     events = models.FloatField()
     execution_time_sec = models.FloatField()
+    memory_size_gb = models.FloatField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     class Meta:
         indexes = [

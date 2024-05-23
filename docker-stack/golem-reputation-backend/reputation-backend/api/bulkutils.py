@@ -36,7 +36,8 @@ def process_disk_benchmark(data_list):
             min_latency_ms=float(data['min_latency_ms']),
             avg_latency_ms=float(data['avg_latency_ms']),
             max_latency_ms=float(data['max_latency_ms']),
-            latency_95th_percentile_ms=float(data['latency_95th_percentile_ms'])
+            latency_95th_percentile_ms=float(data['latency_95th_percentile_ms']),
+            disk_size_gb=float(data['disk_size_gb'])
         ))
 
     # Now, bulk create all DiskBenchmark objects
@@ -125,7 +126,8 @@ def process_memory_benchmark(data_list):
             latency_95th_percentile_ms=float(data['latency_95th_percentile_ms']),
             sum_latency_ms=float(data['sum_latency_ms']),
             events=float(data['events']),
-            execution_time_sec=float(data['execution_time_sec'])
+            execution_time_sec=float(data['execution_time_sec']),
+            memory_size_gb=float(data['memory_size_gb'])
         ))
 
     # Now, bulk create all MemoryBenchmark objects

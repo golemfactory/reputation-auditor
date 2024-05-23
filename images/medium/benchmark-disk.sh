@@ -3,6 +3,12 @@
 # First parameter is the provider ID
 provider_id=$1
 
+# Function to get the disk size in GB
+function get_disk_size() {
+    local disk_size=$(df --output=size -BG / | tail -n 1 | grep -oP '\d+')
+    echo $disk_size
+}
+
 # Define function to run sysbench fileio test and store results in JSON
 function run_and_parse_fileio() {
     local test_mode=$1
@@ -28,6 +34,7 @@ function run_and_parse_fileio() {
     local avg_latency=$(echo "$output" | grep -oP "avg:\s+\K[0-9]+\.[0-9]+")
     local max_latency=$(echo "$output" | grep -oP "max:\s+\K[0-9]+\.[0-9]+")
     local percentile_95th=$(echo "$output" | grep -oP "95th percentile:\s+\K[0-9]+\.[0-9]+")
+    local disk_size=$(get_disk_size)
 
     # Create JSON object and write to file
     jq -n \
@@ -44,6 +51,7 @@ function run_and_parse_fileio() {
         --arg avgLatencyMs "$avg_latency" \
         --arg maxLatencyMs "$max_latency" \
         --arg latency95thPercentileMs "$percentile_95th" \
+        --arg diskSizeGB "$disk_size" \
         '{
         node_id: $providerId,
         benchmark_name: $benchmarkName,
@@ -57,7 +65,8 @@ function run_and_parse_fileio() {
         min_latency_ms: $minLatencyMs,
         avg_latency_ms: $avgLatencyMs,
         max_latency_ms: $maxLatencyMs,
-        latency_95th_percentile_ms: $latency95thPercentileMs
+        latency_95th_percentile_ms: $latency95thPercentileMs,
+        disk_size_gb: $diskSizeGB
     }' >$output_file
 
     # Cleanup after test

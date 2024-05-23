@@ -10,6 +10,12 @@ function derive_benchmark_name() {
     echo $description | sed 's/[^a-zA-Z0-9]/_/g'
 }
 
+# Function to get the memory size in GB
+function get_memory_size() {
+    local memory_size=$(free -g | awk '/^Mem:/{print $2}')
+    echo $memory_size
+}
+
 # Function to run sysbench and parse results
 function run_and_parse_sysbench() {
     local description=$1
@@ -37,6 +43,7 @@ function run_and_parse_sysbench() {
     local sum_latency=$(echo "$output" | grep -oP "sum: +\K[0-9]+(\.[0-9]+)?")
     local events=$(echo "$output" | grep -oP "events \(avg/stddev\): +\K[0-9]+(\.[0-9]+)?")
     local exec_time=$(echo "$output" | grep -oP "execution time \(avg/stddev\): +\K[0-9]+\.[0-9]+")
+    local memory_size=$(get_memory_size)
 
     # Create JSON object
     local json_result=$(jq -n \
@@ -55,6 +62,7 @@ function run_and_parse_sysbench() {
         --arg sumLatencyMs "$sum_latency" \
         --arg events "$events" \
         --arg executionTimeSec "$exec_time" \
+        --arg memoryGB "$memory_size" \
         '{
         node_id: $providerId,
         benchmark_name: $benchmarkName,
@@ -71,6 +79,7 @@ function run_and_parse_sysbench() {
         sum_latency_ms: $sumLatencyMs,
         events: $events,
         execution_time_sec: $executionTimeSec
+        memory_size_gb: $memoryGB
     }')
 
     # Write JSON result to file
