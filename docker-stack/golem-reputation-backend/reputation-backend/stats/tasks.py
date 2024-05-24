@@ -5,7 +5,7 @@ from .models import DailyProviderStats
 def populate_daily_provider_stats():
     url = "http://django:8002/v2/providers/scores"
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
         if response.status_code == 200:
             data = response.json()
         else:
