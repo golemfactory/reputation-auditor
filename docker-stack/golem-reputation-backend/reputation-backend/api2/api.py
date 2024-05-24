@@ -123,6 +123,7 @@ maxMemoryRandWrite: Optional[float] = Query(None, description="Maximum random wr
     pingRegion: str = Query("europe", description="Region for ping filter. Options include 'europe', 'asia', and 'us'."),
     minSuccessRate: Optional[float] = Query(None, description="Minimum percentage of successfully completed tasks"),
     maxSuccessRate: Optional[float] = Query(None, description="Maximum percentage of successfully completed tasks"),
+    providerHasOpenPorts: Optional[bool] = Query(None, description="If true, only providers with open ports are included in the result. If false, only providers without open ports are included. If not specified, all providers are included."),
     is_p2p: bool = Query(False, description="Specify whether the pings should be peer-to-peer (p2p). If True, pings are conducted from open ports; if False, they are routed through the relay. Defaults to False.")):
 
     
@@ -409,6 +410,17 @@ maxMemoryRandWrite: Optional[float] = Query(None, description="Maximum random wr
                 .values('avg_value')[:1]
             )
         ).filter(avg_ping_udp__lte=maxPing)
+
+    if providerHasOpenPorts is not None:
+        if providerHasOpenPorts:
+            eligible_providers = eligible_providers.filter(
+                Q(pingresult__is_p2p=True) & Q(pingresult__from_non_p2p_pinger=True)
+            )
+        else:
+            eligible_providers = eligible_providers.exclude(
+                Q(pingresult__is_p2p=True) & Q(pingresult__from_non_p2p_pinger=True)
+            )
+    
     provider_ids = eligible_providers.values_list('node_id', flat=True)
     return {"provider_ids": list(provider_ids)}
 
@@ -429,29 +441,31 @@ class PingSchema(Schema):
     ping_udp: float
     ping_tcp: float
     is_p2p: bool
+    from_non_p2p_pinger: Optional[bool] = None
 
 @api.post("/pings", include_in_schema=False, auth=PingSecret())
 def create_pings(request, region: str, pings: list[PingSchema]):
     pings_to_create = []
     error_msgs = []
 
-    
     for ping_data in pings:
         provider_id = ping_data.provider_id  # Get provider_id from the POST request
         try:
             provider = Provider.objects.get(node_id=provider_id)  # Fetch the Provider instance using node_id
-            pings_to_create.append(PingResult(
-            provider=provider,
-            is_p2p=ping_data.is_p2p,
-            ping_udp=ping_data.ping_udp,
-            ping_tcp=ping_data.ping_tcp,
-            created_at=timezone.now(),
-            region=region
-        ))
+            ping_result = PingResult(
+                provider=provider,
+                is_p2p=ping_data.is_p2p,
+                ping_udp=ping_data.ping_udp,
+                ping_tcp=ping_data.ping_tcp,
+                created_at=timezone.now(),
+                region=region
+            )
+            if ping_data.from_non_p2p_pinger is not None:
+                ping_result.from_non_p2p_pinger = ping_data.from_non_p2p_pinger
+            pings_to_create.append(ping_result)
         except ObjectDoesNotExist:
             continue
-        
-    
+
     PingResult.objects.bulk_create(pings_to_create)
     return {"message": "Pings created"}
 

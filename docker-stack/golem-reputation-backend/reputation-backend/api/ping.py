@@ -42,7 +42,8 @@ async def async_bulk_create_ping_results(chunk_data, p2p):
                 'provider_id': data.provider_id,
                 'ping_udp': data.ping_udp,
                 'ping_tcp': data.ping_tcp,
-                'is_p2p': data.is_p2p
+                'is_p2p': data.is_p2p,
+                'from_non_p2p_pinger': True
             } for data in chunk_data
         ]
         print("Sending data:", json_payload)
