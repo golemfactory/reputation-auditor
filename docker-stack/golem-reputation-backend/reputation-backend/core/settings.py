@@ -14,6 +14,7 @@ import sys
 from corsheaders.defaults import default_headers
 
 import sys
+import requests
 import json
 
 
@@ -53,6 +54,11 @@ USE_TZ = False
 TIME_ZONE = "Europe/Copenhagen"
 
 CELERY_TASK_RESULT_EXPIRES = 3600  # Expire tasks after 1 hour
+# Fargate container metadata
+if 'ECS_CONTAINER_METADATA_URI' in os.environ:
+    METADATA_URI = os.environ['ECS_CONTAINER_METADATA_URI']
+    container_metadata = requests.get(METADATA_URI).json()
+    ALLOWED_HOSTS.append(container_metadata['Networks'][0]['IPv4Addresses'][0])
 
 # Application definition
 
