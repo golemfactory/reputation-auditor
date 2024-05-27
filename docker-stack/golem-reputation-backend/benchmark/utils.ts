@@ -1,10 +1,16 @@
 import { TaskCompletion, ProviderData, Benchmark } from "./types"
-const URL = process.env.API_HOST ?? process.env.DOCKER === "true" ? "django:8002" : "api.localhost"
+const HOST = process.env.API_HOST ?? (process.env.DOCKER === "true" ? "django:8002" : "api.localhost")
+const HTTP = process.env.HTTP ?? "http";
+const URL=`${HTTP}://${HOST}`
+
+export async function delay(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 export async function bulkSubmitTaskStatuses(taskStatuses: TaskCompletion[]) {
     if (!taskStatuses.length) return
     try {
-        const endpoint = `http://${URL}/v1/submit/task/status/bulk`
+        const endpoint = `${URL}/v1/submit/task/status/bulk`
 
         const response = await fetch(endpoint, {
             method: "POST",
@@ -51,7 +57,7 @@ export async function fetchProvidersData(): Promise<ProviderData[]> {
 export async function submitBulkBenchmark(benchmarks: Benchmark[]): Promise<string | undefined> {
     try {
         // Updated endpoint to handle bulk benchmark submissions
-        const endpoint = `http://${URL}/v1/benchmark/bulk`
+        const endpoint = `${URL}/v1/benchmark/bulk`
         const response = await fetch(endpoint, {
             method: "POST",
             headers: {
@@ -78,7 +84,7 @@ export async function submitBulkBenchmark(benchmarks: Benchmark[]): Promise<stri
 
 export async function getBlacklistedProviders(): Promise<string[]> {
     try {
-        const endpoint = `http://${URL}/v1/blacklisted-providers`
+        const endpoint = `${URL}/v1/blacklisted-providers`
 
         const response = await fetch(endpoint, {
             method: "GET",
@@ -100,7 +106,7 @@ export async function getBlacklistedProviders(): Promise<string[]> {
 }
 export async function getBlacklistedOperators(): Promise<string[] | undefined> {
     try {
-        const endpoint = `http://${URL}/v1/blacklisted-operators`
+        const endpoint = `${URL}/v1/blacklisted-operators`
 
         const response = await fetch(endpoint, {
             method: "GET",
@@ -123,15 +129,17 @@ export async function getBlacklistedOperators(): Promise<string[] | undefined> {
     }
 }
 
-export async function sendStartTaskSignal(): Promise<string | undefined> {
+export async function sendStartTaskSignal(): Promise<string> {
+    console.log(`${HOST}  {${process.env.BACKEND_API_TOKEN}}`);
     try {
-        const endpoint = `http://${URL}/v1/task/start`
+        const endpoint = `${URL}/v1/task/start`
         const jsonData = JSON.stringify({
             name: "spinup suite",
         })
 
         const response = await fetch(endpoint, {
             method: "POST",
+            credentials: "include",
             headers: {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${process.env.BACKEND_API_TOKEN}`,
@@ -149,12 +157,13 @@ export async function sendStartTaskSignal(): Promise<string | undefined> {
         }
     } catch (error) {
         console.error("Error:", error)
+        throw error;
     }
 }
 
 export async function sendStopTaskSignal(taskId: string, cost: number): Promise<string | undefined> {
     try {
-        const endpoint = `http://${URL}/v1/task/end/${taskId}?cost=${cost}`
+        const endpoint = `${URL}/v1/task/end/${taskId}?cost=${cost}`
         console.log(`Sending stop signal to ${endpoint}`, cost, taskId)
         const response = await fetch(endpoint, {
             method: "POST",
@@ -183,7 +192,7 @@ export async function sendOfferFromProvider(
     reason: string
 ): Promise<string | undefined> {
     try {
-        const endpoint = `http://${URL}/v1/task/offer/${taskId}`
+        const endpoint = `${URL}/v1/task/offer/${taskId}`
         const data = JSON.stringify({
             node_id: nodeId,
             offer,
@@ -216,7 +225,7 @@ export async function sendBulkTaskCostUpdates(
     updates: Array<{ taskId: string; providerId: string; cost: number }>
 ): Promise<string | undefined> {
     try {
-        const endpoint = `http://${URL}/v1/tasks/update-costs`
+        const endpoint = `${URL}/v1/tasks/update-costs`
         const data = JSON.stringify({
             updates: updates.map((update) => ({
                 task_id: Number(update.taskId),

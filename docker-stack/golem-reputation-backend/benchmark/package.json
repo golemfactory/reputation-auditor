@@ -5,6 +5,7 @@
     "main": "index.js",
     "scripts": {
         "benchmark": "ts-node benchmark.ts",
+        "gpu-benchmark": "ts-node vm-nvidia/vm-nvidia-cli.ts",
         "benchmark-scheduler": "ts-node benchmark-scheduler.ts"
     },
     "author": "",
@@ -17,6 +18,7 @@
         "csv-writer": "^1.6.0",
         "date-fns": "^3.2.0",
         "debug": "^4.3.4",
+        "dotenv": "^16.4.5",
         "generic-pool": "^3.9.0",
         "minimist": "^1.2.8",
         "node-fetch": "^3.3.2",

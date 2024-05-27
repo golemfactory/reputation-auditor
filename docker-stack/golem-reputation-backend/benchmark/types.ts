@@ -15,6 +15,7 @@ export interface TaskCompletion {
     is_successful: boolean
     error_message?: string // assuming error_message is optional
     task_id: number
+    type?: 'CPU' | 'GPU';
 }
 
 export interface Benchmark {
