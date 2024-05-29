@@ -332,7 +332,7 @@ export class Golem {
 
                     const activity = await Activity.create(agreement, this.api, {
                         activityExecuteTimeout: (this.config.requestTimeoutSec ?? MIN_ACTIVITY_DURATION) * 1000,
-                        activityExeBatchResultPollIntervalSeconds: 50,
+                        activityExeBatchResultPollIntervalSeconds: 70,
                         activityRequestTimeout: 50000,
                     })
 
