@@ -138,7 +138,7 @@ services:
             [
                 "/bin/sh",
                 "-c",
-                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; cd /benchmark; npm i && npm run benchmark-scheduler",
+                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; cd /benchmark; npm i && npm run benchmark-scheduler -b vm",
             ]
         image: ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:latest
         env_file:
@@ -146,6 +146,36 @@ services:
         volumes:
             - "./key.json:/key.json"
             - "./benchmarker-datadir:/root/.local/share/yagna/"
+        healthcheck:
+            test: /check_yagna.sh || exit 1
+            interval: 15s
+            timeout: 5s
+            retries: 3
+            start_period: 15s
+        deploy:
+            replicas: 1
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: any
+        networks:
+            - reputation
+    benchmarker_worker014:
+        command:
+            [
+                "/bin/sh",
+                "-c",
+                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; cd /benchmark; npm i && npm run benchmark-scheduler -b vm-nvidia",
+            ]
+        image: ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:latest
+        env_file:
+            - ./.envs/.django
+        volumes:
+            - "./key014.json:/key.json"
+            - "./benchmarker-datadir014:/root/.local/share/yagna/"
+            - "./yagna-builds014:/yagna"
         healthcheck:
             test: /check_yagna.sh || exit 1
             interval: 15s
