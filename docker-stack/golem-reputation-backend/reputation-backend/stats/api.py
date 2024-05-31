@@ -342,3 +342,46 @@ def get_provider_details(request, node_id: str):
         task_participation=task_participations_sorted,
         success_rate=success_rate  # Add success rate to the response
     )
+
+
+
+from django.db.models import Count, Q, F, Max
+from api.models import NodeStatusHistory, BlacklistedProvider, BlacklistedOperator
+
+@api.get("/providers/online")
+def online_provider_summary(request):
+
+    # Get the latest online status for each provider
+    latest_online_statuses = NodeStatusHistory.objects.annotate(
+        latest=Max('timestamp', filter=Q(is_online=True))
+    ).filter(
+        timestamp=F('latest'), is_online=True
+    ).values_list('provider_id', flat=True)
+
+    # Get the success rate for each provider
+    providers = Provider.objects.filter(node_id__in=latest_online_statuses).annotate(
+        success_count=Count('taskcompletion', filter=Q(taskcompletion__is_successful=True)),
+        total_count=Count('taskcompletion')
+    ).all()
+
+    # Get the blacklist status for each provider
+    blacklisted_providers = set(BlacklistedProvider.objects.values_list('provider__node_id', flat=True))
+    blacklisted_wallets = set(BlacklistedOperator.objects.values_list('wallet', flat=True))
+
+    result = []
+    for provider in providers:
+        success_rate = (provider.success_count / provider.total_count * 100) if provider.total_count > 0 else None
+        is_blacklisted_provider = provider.node_id in blacklisted_providers
+
+        # Determine the correct payment address key based on network
+        payment_address_key = 'golem.com.payment.platform.erc20-mainnet-glm.address' if provider.network == 'mainnet' else 'golem.com.payment.platform.erc20-holesky-tglm.address'
+        is_blacklisted_wallet = provider.payment_addresses.get(payment_address_key) in blacklisted_wallets
+
+        result.append({
+            "node_id": provider.node_id,
+            "success_rate": success_rate,
+            "is_blacklisted_provider": is_blacklisted_provider,
+            "is_blacklisted_wallet": is_blacklisted_wallet
+        })
+
+    return JsonResponse(result, safe=False)
