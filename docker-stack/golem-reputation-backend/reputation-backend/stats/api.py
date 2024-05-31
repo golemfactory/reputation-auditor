@@ -389,11 +389,6 @@ def online_provider_summary(request):
 
 @api.get("/provider/{node_id}/status")
 def get_provider_status(request, node_id: str):
-    # Get the latest online status for the specified provider
-    latest_status = NodeStatusHistory.objects.filter(provider_id=node_id).order_by('-timestamp').first()
-    if not latest_status:
-        return JsonResponse({"detail": "Provider not found"}, status=404)
-
     # Get the provider details
     provider = Provider.objects.filter(node_id=node_id).annotate(
         success_count=Count('taskcompletion', filter=Q(taskcompletion__is_successful=True)),
