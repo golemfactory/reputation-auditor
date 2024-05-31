@@ -347,19 +347,19 @@ def get_provider_details(request, node_id: str):
 
 from django.db.models import Count, Q, F, Max
 from api.models import NodeStatusHistory, BlacklistedProvider, BlacklistedOperator
+from datetime import datetime, timedelta
 
 @api.get("/providers/online")
-def online_provider_summary(request):
+def provider_summary(request):
 
-    # Get the latest online status for each provider
-    latest_online_statuses = NodeStatusHistory.objects.annotate(
-        latest=Max('timestamp', filter=Q(is_online=True))
-    ).filter(
-        timestamp=F('latest'), is_online=True
-    ).values_list('provider_id', flat=True)
+    # Get the providers with NodeStatusHistory from the last 10 days
+    ten_days_ago = datetime.now() - timedelta(days=10)
+    recent_active_providers = NodeStatusHistory.objects.filter(
+        timestamp__gte=ten_days_ago
+    ).values_list('provider_id', flat=True).distinct()
 
     # Get the success rate for each provider
-    providers = Provider.objects.filter(node_id__in=latest_online_statuses).annotate(
+    providers = Provider.objects.filter(node_id__in=recent_active_providers).annotate(
         success_count=Count('taskcompletion', filter=Q(taskcompletion__is_successful=True)),
         total_count=Count('taskcompletion')
     ).all()
@@ -387,34 +387,3 @@ def online_provider_summary(request):
     return JsonResponse(result, safe=False)
 
 
-@api.get("/provider/{node_id}/status")
-def get_provider_status(request, node_id: str):
-    # Get the latest online status for the specified provider
-    latest_status = NodeStatusHistory.objects.filter(provider_id=node_id).order_by('-timestamp').first()
-    if not latest_status:
-        return JsonResponse({"detail": "Provider not found"}, status=404)
-
-    # Get the provider details
-    provider = Provider.objects.filter(node_id=node_id).annotate(
-        success_count=Count('taskcompletion', filter=Q(taskcompletion__is_successful=True)),
-        total_count=Count('taskcompletion')
-    ).first()
-    if not provider:
-        return JsonResponse({"detail": "Provider not found"}, status=404)
-
-    # Calculate success rate
-    success_rate = (provider.success_count / provider.total_count * 100) if provider.total_count > 0 else None
-
-    # Get the blacklist status
-    is_blacklisted_provider = node_id in set(BlacklistedProvider.objects.values_list('provider__node_id', flat=True))
-    payment_address_key = 'golem.com.payment.platform.erc20-mainnet-glm.address' if provider.network == 'mainnet' else 'golem.com.payment.platform.erc20-holesky-tglm.address'
-    is_blacklisted_wallet = provider.payment_addresses.get(payment_address_key) in set(BlacklistedOperator.objects.values_list('wallet', flat=True))
-
-    result = {
-        "node_id": provider.node_id,
-        "success_rate": success_rate,
-        "is_blacklisted_provider": is_blacklisted_provider,
-        "is_blacklisted_wallet": is_blacklisted_wallet
-    }
-
-    return JsonResponse(result)
