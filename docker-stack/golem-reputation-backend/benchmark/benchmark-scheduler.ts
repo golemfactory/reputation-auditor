@@ -179,7 +179,7 @@ program
     CRON_TIME = options.cronTime;
     DEBUG = options.debug;
 
-    await main(options.benchmarks).catch((e) => {
+    await main(options.benchmark).catch((e) => {
       console.error("Benchmark scheduler failed:", e);
       process.exit(1);
     });
