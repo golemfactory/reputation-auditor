@@ -175,7 +175,7 @@ services:
         volumes:
             - "./key014.json:/key.json"
             - "./benchmarker-datadir014:/root/.local/share/yagna/"
-            - "./yagna-builds-014:/yagna"
+            - "./golem-reputation-backend/yagna-builds-014:/yagna"
         healthcheck:
             test: /check_yagna.sh || exit 1
             interval: 15s
