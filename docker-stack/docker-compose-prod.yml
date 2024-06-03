@@ -138,7 +138,7 @@ services:
             [
                 "/bin/sh",
                 "-c",
-                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; cd /benchmark; npm i && npm run benchmark-scheduler -b vm",
+                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; cd /benchmark; npm i && npm run benchmark-scheduler -- -b vm",
             ]
         image: ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:latest
         env_file:
@@ -167,7 +167,7 @@ services:
             [
                 "/bin/sh",
                 "-c",
-                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; cd /benchmark; npm i && npm run benchmark-scheduler -b vm-nvidia -k benchmark-vm-nvidia-last-run",
+                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; cd /benchmark; npm i && npm run benchmark-scheduler -- -b vm-nvidia -k benchmark-vm-nvidia-last-run",
             ]
         image: ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:latest
         env_file:
