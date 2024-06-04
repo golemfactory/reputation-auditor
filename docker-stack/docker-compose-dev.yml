@@ -133,7 +133,7 @@ services:
             [
                 "/bin/sh",
                 "-c",
-                "/wait-for-it.sh postgres:5432 -- /reputation-backend/start.sh; cd /benchmark; npm i && npm run benchmark-scheduler",
+                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; cd /benchmark; npm i && npm run benchmark-scheduler -- -b vm",
             ]
         build:
             context: golem-reputation-backend/.
@@ -144,6 +144,40 @@ services:
             - "./golem-reputation-backend/benchmark:/benchmark/"
             - "./benchmarker-datadir:/root/.local/share/yagna/"
             - "./key.json:/key.json"
+        env_file:
+            - ./.envs-dev/.django
+        healthcheck:
+            test: /check_yagna.sh || exit 1
+            interval: 15s
+            timeout: 5s
+            retries: 3
+            start_period: 15s
+        deploy:
+            replicas: 1
+            update_config:
+                parallelism: 1
+                failure_action: rollback
+                delay: 10s
+            restart_policy:
+                condition: on-failure
+        networks:
+            - reputation
+    benchmarker_worker014:
+        command:
+            [
+                "/bin/sh",
+                "-c",
+                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; cd /benchmark; npm i && npm run benchmark-scheduler -- -b vm-nvidia -k benchmark-vm-nvidia-last-run",
+            ]
+        build:
+            context: golem-reputation-backend/.
+            dockerfile: dockerfiles/Yagna
+        image: reputation-celery-yagna:latest
+        volumes:
+            - "./golem-reputation-backend/reputation-backend:/reputation-backend/"
+            - "./golem-reputation-backend/benchmark:/benchmark/"
+            - "./benchmarker-datadir014:/root/.local/share/yagna/"
+            - "./golem-reputation-backend/yagna-builds-014:/yagna"
         env_file:
             - ./.envs-dev/.django
         healthcheck:
