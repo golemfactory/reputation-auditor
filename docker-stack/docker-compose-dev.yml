@@ -178,6 +178,7 @@ services:
             - "./golem-reputation-backend/benchmark:/benchmark/"
             - "./benchmarker-datadir014:/root/.local/share/yagna/"
             - "./golem-reputation-backend/yagna-builds-014:/yagna"
+            - "./key014.json:/key.json"
         env_file:
             - ./.envs-dev/.django
         healthcheck:
