@@ -661,7 +661,7 @@ SCHEMAS = {
 
 class SchemaResponse(Schema):
     provider_ids: list[str]
-
+import requests
 @api.get(
     "/providers/schema/{schema_name}",
     tags=["Reputation"],
@@ -696,8 +696,11 @@ def filter_providers_by_schema(request, schema_name: str):
         return JsonResponse({"error": "Schema not found"}, status=404)
     
     # Proxy the request to filter_providers
-    response = filter_providers(request, **schema)
-    return response
+    request = requests.get(
+        f"http://django:8002/v2/filter",
+        params=schema
+    )
+    return request.json()
 
 
 @api.get(
