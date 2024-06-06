@@ -601,3 +601,390 @@ def get_provider_scores(request, node_id: str = Path(..., description="The node_
             ).order_by('-created_at').values_list('ping_udp', flat=True)[:5].aggregate(avg_ping=Avg('ping_udp'))['avg_ping']
         }
     return JsonResponse({"node_id": node_id, "scores": scores})
+
+
+
+SCHEMAS = {
+    "database": {
+        "minUptime": 99.9,
+        "minCpuMultiThreadScore": 2000,
+        "minMemorySeqRead": 500,
+        "minMemorySeqWrite": 500,
+        "minNetworkDownloadSpeed": 100,
+        "minSuccessRate": 99.0
+    },
+    "web_server": {
+        "minUptime": 99.0,
+        "minCpuSingleThreadScore": 1500,
+        "minNetworkDownloadSpeed": 50,
+        "minSuccessRate": 95.0
+    },
+    "compute_intensive": {
+        "minCpuMultiThreadScore": 3000,
+        "minCpuSingleThreadScore": 2000,
+        "minMemorySeqRead": 400,
+        "minMemorySeqWrite": 400,
+        "minSuccessRate": 98.0
+    },
+    "storage_intensive": {
+        "minMemorySeqRead": 1000,
+        "minMemorySeqWrite": 1000,
+        "minRandomReadDiskThroughput": 200,
+        "minRandomWriteDiskThroughput": 200,
+        "minSuccessRate": 97.0
+    },
+    "network_intensive": {
+        "minNetworkDownloadSpeed": 200,
+        "minNetworkUploadSpeed": 200,
+        "minSuccessRate": 96.0
+    },
+    "low_latency": {
+        "maxPing": 50,
+        "minSuccessRate": 99.0
+    },
+    "high_availability": {
+        "minUptime": 99.99,
+        "minSuccessRate": 99.9
+    },
+    "balanced": {
+        "minUptime": 98.0,
+        "minCpuMultiThreadScore": 1500,
+        "minMemorySeqRead": 300,
+        "minNetworkDownloadSpeed": 50,
+        "minSuccessRate": 90.0
+    },
+    "test_environment": {
+        "minUptime": 90.0,
+        "minSuccessRate": 80.0
+    }
+}
+
+class SchemaResponse(Schema):
+    provider_ids: list[str]
+
+@api.get(
+    "/providers/schema/{schema_name}",
+    tags=["Reputation"],
+    summary="Retrieve providers based on predefined schema",
+    description="""
+    This endpoint retrieves a list of providers based on a predefined schema. Each schema specifies a set of filter parameters that are used to query the providers. The available schemas are:
+
+    - **database**: High uptime, good network speeds, and other important metrics for database services.
+    - **web_server**: High uptime, good single-thread CPU performance, and network speeds for web servers.
+    - **compute_intensive**: High multi-thread and single-thread CPU performance for compute-intensive tasks.
+    - **storage_intensive**: High sequential and random read/write performance for storage-intensive tasks.
+    - **network_intensive**: High network download and upload speeds for network-intensive tasks.
+    - **low_latency**: Low ping and high success rate for low-latency applications.
+    - **high_availability**: Very high uptime and success rate for high-availability services.
+    - **balanced**: Balanced performance across various metrics.
+    - **test_environment**: Lower requirements suitable for test environments.
+    """,
+    response=SchemaResponse
+)
+def filter_providers_by_schema(request, schema_name: str):
+    """
+    Retrieve providers based on a predefined schema.
+
+    Parameters:
+    - schema_name: The name of the schema to use for filtering providers.
+
+    Returns:
+    - A list of provider IDs that match the specified schema.
+    """
+    schema = SCHEMAS.get(schema_name)
+    if not schema:
+        return JsonResponse({"error": "Schema not found"}, status=404)
+    
+    # Proxy the request to filter_providers
+    response = filter_providers(request, **schema)
+    return response
+
+
+@api.get(
+    "/providers/all_scores",
+    tags=["Reputation"],
+    summary="Retrieve all provider scores",
+    description="This endpoint retrieves the scores of all providers without any filters applied. It provides a comprehensive view of all available provider scores."
+)
+def list_all_provider_scores(request):
+    providers = Provider.objects.all()
+    all_scores = []
+
+    for provider in providers:
+        scores = {
+            "provider": {
+                "id": provider.node_id,
+                "name": provider.name,
+                "walletAddress": provider.payment_addresses.get('golem.com.payment.platform.erc20-mainnet-glm.address', None)
+            },
+            "scores": {
+                "uptime": calculate_uptime(provider.node_id),
+                "cpuMultiThreadScore": CpuBenchmark.objects.filter(
+                    provider=provider,
+                    benchmark_name="CPU Multi-thread Benchmark"
+                ).order_by('-created_at').values_list('events_per_second', flat=True).first(),
+                "cpuSingleThreadScore": CpuBenchmark.objects.filter(
+                    provider=provider,
+                    benchmark_name="CPU Single-thread Benchmark"
+                ).order_by('-created_at').values_list('events_per_second', flat=True).first(),
+                "successRate": (TaskCompletion.objects.filter(provider=provider, is_successful=True).count() / TaskCompletion.objects.filter(provider=provider).count() * 100) if TaskCompletion.objects.filter(provider=provider).count() > 0 else None,
+                "memorySeqRead": MemoryBenchmark.objects.filter(
+                    provider=provider,
+                    benchmark_name="Sequential_Read_Performance__Single_Thread_"
+                ).order_by('-created_at').values_list('throughput_mi_b_sec', flat=True).first(),
+                "memorySeqWrite": MemoryBenchmark.objects.filter(
+                    provider=provider,
+                    benchmark_name="Sequential_Write_Performance__Single_Thread_"
+                ).order_by('-created_at').values_list('throughput_mi_b_sec', flat=True).first(),
+                "memoryRandRead": MemoryBenchmark.objects.filter(
+                    provider=provider,
+                    benchmark_name="Random_Read_Performance__Multi_threaded_"
+                ).order_by('-created_at').values_list('throughput_mi_b_sec', flat=True).first(),
+                "memoryRandWrite": MemoryBenchmark.objects.filter(
+                    provider=provider,
+                    benchmark_name="Random_Write_Performance__Multi_threaded_"
+                ).order_by('-created_at').values_list('throughput_mi_b_sec', flat=True).first(),
+                "randomReadDiskThroughput": DiskBenchmark.objects.filter(
+                    provider=provider,
+                    benchmark_name="FileIO_rndrd"
+                ).order_by('-created_at').values_list('read_throughput_mb_ps', flat=True).first(),
+                "randomWriteDiskThroughput": DiskBenchmark.objects.filter(
+                    provider=provider,
+                    benchmark_name="FileIO_rndwr"
+                ).order_by('-created_at').values_list('write_throughput_mb_ps', flat=True).first(),
+                "sequentialReadDiskThroughput": DiskBenchmark.objects.filter(
+                    provider=provider,
+                    benchmark_name="FileIO_seqrd"
+                ).order_by('-created_at').values_list('read_throughput_mb_ps', flat=True).first(),
+                "sequentialWriteDiskThroughput": DiskBenchmark.objects.filter(
+                    provider=provider,
+                    benchmark_name="FileIO_seqwr"
+                ).order_by('-created_at').values_list('write_throughput_mb_ps', flat=True).first(),
+                "networkDownloadSpeed": NetworkBenchmark.objects.filter(
+                    provider=provider
+                ).order_by('-created_at').values_list('mbit_per_second', flat=True).first(),
+                "ping": {
+                    region: {
+                        "p2p": PingResult.objects.filter(
+                            provider=provider,
+                            region=region,
+                            is_p2p=True
+                        ).order_by('-created_at').values_list('ping_udp', flat=True)[:5].aggregate(avg_ping=Avg('ping_udp'))['avg_ping'],
+                        "non_p2p": PingResult.objects.filter(
+                            provider=provider,
+                            region=region,
+                            is_p2p=False
+                        ).order_by('-created_at').values_list('ping_udp', flat=True)[:5].aggregate(avg_ping=Avg('ping_udp'))['avg_ping']
+                    } for region in ["europe", "asia", "us"]
+                }
+            }
+        }
+        all_scores.append(scores)
+
+    return JsonResponse({"providers": all_scores})
+
+
+from django.db.models import Min, Max, Avg, Subquery, OuterRef
+
+@api.get(
+    "/providers/score_overview",
+    tags=["Reputation"],
+    summary="Retrieve an overview of provider scores",
+    description="This endpoint provides an overview of provider scores, including minimum, maximum, and average values for each metric based on the latest scores for each provider."
+)
+def get_score_overview(request):
+    providers = Provider.objects.all()
+
+    # Calculate uptime for each provider
+    def calculate_uptime(provider):
+        statuses = NodeStatusHistory.objects.filter(provider=provider).order_by('timestamp')
+
+        online_duration = timedelta(0)
+        last_online_time = None
+
+        for status in statuses:
+            if status.is_online:
+                last_online_time = status.timestamp
+            elif last_online_time:
+                online_duration += status.timestamp - last_online_time
+                last_online_time = None
+
+        if last_online_time is not None:
+            online_duration += timezone.now() - last_online_time
+
+        total_duration = timezone.now() - provider.created_at
+        if total_duration.total_seconds() > 0:
+            uptime_percentage = (online_duration.total_seconds() / total_duration.total_seconds()) * 100
+        else:
+            uptime_percentage = 0
+        return uptime_percentage
+
+    uptimes = [calculate_uptime(provider) for provider in providers]
+    uptime_overview = {
+        "min": min(uptimes) if uptimes else None,
+        "max": max(uptimes) if uptimes else None,
+        "avg": sum(uptimes) / len(uptimes) if uptimes else None,
+    }
+    overview = {
+        "uptime": uptime_overview,
+        "cpuMultiThreadScore": {
+            "min": Provider.objects.annotate(latest_cpu_multi_thread_score=Subquery(
+                CpuBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="CPU Multi-thread Benchmark").order_by('-created_at').values('events_per_second')[:1]
+            )).aggregate(min=Min('latest_cpu_multi_thread_score'))['min'],
+            "max": Provider.objects.annotate(latest_cpu_multi_thread_score=Subquery(
+                CpuBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="CPU Multi-thread Benchmark").order_by('-created_at').values('events_per_second')[:1]
+            )).aggregate(max=Max('latest_cpu_multi_thread_score'))['max'],
+            "avg": Provider.objects.annotate(latest_cpu_multi_thread_score=Subquery(
+                CpuBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="CPU Multi-thread Benchmark").order_by('-created_at').values('events_per_second')[:1]
+            )).aggregate(avg=Avg('latest_cpu_multi_thread_score'))['avg'],
+        },
+        "cpuSingleThreadScore": {
+            "min": Provider.objects.annotate(latest_cpu_single_thread_score=Subquery(
+                CpuBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="CPU Single-thread Benchmark").order_by('-created_at').values('events_per_second')[:1]
+            )).aggregate(min=Min('latest_cpu_single_thread_score'))['min'],
+            "max": Provider.objects.annotate(latest_cpu_single_thread_score=Subquery(
+                CpuBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="CPU Single-thread Benchmark").order_by('-created_at').values('events_per_second')[:1]
+            )).aggregate(max=Max('latest_cpu_single_thread_score'))['max'],
+            "avg": Provider.objects.annotate(latest_cpu_single_thread_score=Subquery(
+                CpuBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="CPU Single-thread Benchmark").order_by('-created_at').values('events_per_second')[:1]
+            )).aggregate(avg=Avg('latest_cpu_single_thread_score'))['avg'],
+        },
+        "successRate": {
+            "min": Provider.objects.annotate(successful_tasks=Count('taskcompletion', filter=Q(taskcompletion__is_successful=True)),
+                                             total_tasks=Count('taskcompletion'),
+                                             success_rate=Case(
+                                                 When(total_tasks=0, then=None),
+                                                 default=(Cast('successful_tasks', FloatField()) / Cast('total_tasks', FloatField()) * 100)
+                                             )).aggregate(min=Min('success_rate'))['min'],
+            "max": Provider.objects.annotate(successful_tasks=Count('taskcompletion', filter=Q(taskcompletion__is_successful=True)),
+                                             total_tasks=Count('taskcompletion'),
+                                             success_rate=Case(
+                                                 When(total_tasks=0, then=None),
+                                                 default=(Cast('successful_tasks', FloatField()) / Cast('total_tasks', FloatField()) * 100)
+                                             )).aggregate(max=Max('success_rate'))['max'],
+            "avg": Provider.objects.annotate(successful_tasks=Count('taskcompletion', filter=Q(taskcompletion__is_successful=True)),
+                                             total_tasks=Count('taskcompletion'),
+                                             success_rate=Case(
+                                                 When(total_tasks=0, then=None),
+                                                 default=(Cast('successful_tasks', FloatField()) / Cast('total_tasks', FloatField()) * 100)
+                                             )).aggregate(avg=Avg('success_rate'))['avg'],
+        },
+        "memorySeqRead": {
+            "min": Provider.objects.annotate(latest_mem_seq_read=Subquery(
+                MemoryBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="Sequential_Read_Performance__Single_Thread_").order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )).aggregate(min=Min('latest_mem_seq_read'))['min'],
+            "max": Provider.objects.annotate(latest_mem_seq_read=Subquery(
+                MemoryBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="Sequential_Read_Performance__Single_Thread_").order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )).aggregate(max=Max('latest_mem_seq_read'))['max'],
+            "avg": Provider.objects.annotate(latest_mem_seq_read=Subquery(
+                MemoryBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="Sequential_Read_Performance__Single_Thread_").order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )).aggregate(avg=Avg('latest_mem_seq_read'))['avg'],
+        },
+        "memorySeqWrite": {
+            "min": Provider.objects.annotate(latest_mem_seq_write=Subquery(
+                MemoryBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="Sequential_Write_Performance__Single_Thread_").order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )).aggregate(min=Min('latest_mem_seq_write'))['min'],
+            "max": Provider.objects.annotate(latest_mem_seq_write=Subquery(
+                MemoryBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="Sequential_Write_Performance__Single_Thread_").order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )).aggregate(max=Max('latest_mem_seq_write'))['max'],
+            "avg": Provider.objects.annotate(latest_mem_seq_write=Subquery(
+                MemoryBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="Sequential_Write_Performance__Single_Thread_").order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )).aggregate(avg=Avg('latest_mem_seq_write'))['avg'],
+        },
+        "memoryRandRead": {
+            "min": Provider.objects.annotate(latest_mem_rand_read=Subquery(
+                MemoryBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="Random_Read_Performance__Multi_threaded_").order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )).aggregate(min=Min('latest_mem_rand_read'))['min'],
+            "max": Provider.objects.annotate(latest_mem_rand_read=Subquery(
+                MemoryBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="Random_Read_Performance__Multi_threaded_").order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )).aggregate(max=Max('latest_mem_rand_read'))['max'],
+            "avg": Provider.objects.annotate(latest_mem_rand_read=Subquery(
+                MemoryBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="Random_Read_Performance__Multi_threaded_").order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )).aggregate(avg=Avg('latest_mem_rand_read'))['avg'],
+        },
+        "memoryRandWrite": {
+            "min": Provider.objects.annotate(latest_mem_rand_write=Subquery(
+                MemoryBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="Random_Write_Performance__Multi_threaded_").order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )).aggregate(min=Min('latest_mem_rand_write'))['min'],
+            "max": Provider.objects.annotate(latest_mem_rand_write=Subquery(
+                MemoryBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="Random_Write_Performance__Multi_threaded_").order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )).aggregate(max=Max('latest_mem_rand_write'))['max'],
+            "avg": Provider.objects.annotate(latest_mem_rand_write=Subquery(
+                MemoryBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="Random_Write_Performance__Multi_threaded_").order_by('-created_at').values('throughput_mi_b_sec')[:1]
+            )).aggregate(avg=Avg('latest_mem_rand_write'))['avg'],
+        },
+        "randomReadDiskThroughput": {
+            "min": Provider.objects.annotate(latest_disk_random_read_throughput=Subquery(
+                DiskBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="FileIO_rndrd").order_by('-created_at').values('read_throughput_mb_ps')[:1]
+            )).aggregate(min=Min('latest_disk_random_read_throughput'))['min'],
+            "max": Provider.objects.annotate(latest_disk_random_read_throughput=Subquery(
+                DiskBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="FileIO_rndrd").order_by('-created_at').values('read_throughput_mb_ps')[:1]
+            )).aggregate(max=Max('latest_disk_random_read_throughput'))['max'],
+            "avg": Provider.objects.annotate(latest_disk_random_read_throughput=Subquery(
+                DiskBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="FileIO_rndrd").order_by('-created_at').values('read_throughput_mb_ps')[:1]
+            )).aggregate(avg=Avg('latest_disk_random_read_throughput'))['avg'],
+        },
+        "randomWriteDiskThroughput": {
+            "min": Provider.objects.annotate(latest_disk_random_write_throughput=Subquery(
+                DiskBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="FileIO_rndwr").order_by('-created_at').values('write_throughput_mb_ps')[:1]
+            )).aggregate(min=Min('latest_disk_random_write_throughput'))['min'],
+            "max": Provider.objects.annotate(latest_disk_random_write_throughput=Subquery(
+                DiskBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="FileIO_rndwr").order_by('-created_at').values('write_throughput_mb_ps')[:1]
+            )).aggregate(max=Max('latest_disk_random_write_throughput'))['max'],
+            "avg": Provider.objects.annotate(latest_disk_random_write_throughput=Subquery(
+                DiskBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="FileIO_rndwr").order_by('-created_at').values('write_throughput_mb_ps')[:1]
+            )).aggregate(avg=Avg('latest_disk_random_write_throughput'))['avg'],
+        },
+        "sequentialReadDiskThroughput": {
+            "min": Provider.objects.annotate(latest_disk_sequential_read_throughput=Subquery(
+                DiskBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="FileIO_seqrd").order_by('-created_at').values('read_throughput_mb_ps')[:1]
+            )).aggregate(min=Min('latest_disk_sequential_read_throughput'))['min'],
+            "max": Provider.objects.annotate(latest_disk_sequential_read_throughput=Subquery(
+                DiskBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="FileIO_seqrd").order_by('-created_at').values('read_throughput_mb_ps')[:1]
+            )).aggregate(max=Max('latest_disk_sequential_read_throughput'))['max'],
+            "avg": Provider.objects.annotate(latest_disk_sequential_read_throughput=Subquery(
+                DiskBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="FileIO_seqrd").order_by('-created_at').values('read_throughput_mb_ps')[:1]
+            )).aggregate(avg=Avg('latest_disk_sequential_read_throughput'))['avg'],
+        },
+        "sequentialWriteDiskThroughput": {
+            "min": Provider.objects.annotate(latest_disk_sequential_write_throughput=Subquery(
+                DiskBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="FileIO_seqwr").order_by('-created_at').values('write_throughput_mb_ps')[:1]
+            )).aggregate(min=Min('latest_disk_sequential_write_throughput'))['min'],
+            "max": Provider.objects.annotate(latest_disk_sequential_write_throughput=Subquery(
+                DiskBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="FileIO_seqwr").order_by('-created_at').values('write_throughput_mb_ps')[:1]
+            )).aggregate(max=Max('latest_disk_sequential_write_throughput'))['max'],
+            "avg": Provider.objects.annotate(latest_disk_sequential_write_throughput=Subquery(
+                DiskBenchmark.objects.filter(provider=OuterRef('pk'), benchmark_name="FileIO_seqwr").order_by('-created_at').values('write_throughput_mb_ps')[:1]
+            )).aggregate(avg=Avg('latest_disk_sequential_write_throughput'))['avg'],
+        },
+        "networkDownloadSpeed": {
+            "min": Provider.objects.annotate(latest_network_download_speed=Subquery(
+                NetworkBenchmark.objects.filter(provider=OuterRef('pk')).order_by('-created_at').values('mbit_per_second')[:1]
+            )).aggregate(min=Min('latest_network_download_speed'))['min'],
+            "max": Provider.objects.annotate(latest_network_download_speed=Subquery(
+                NetworkBenchmark.objects.filter(provider=OuterRef('pk')).order_by('-created_at').values('mbit_per_second')[:1]
+            )).aggregate(max=Max('latest_network_download_speed'))['max'],
+            "avg": Provider.objects.annotate(latest_network_download_speed=Subquery(
+                NetworkBenchmark.objects.filter(provider=OuterRef('pk')).order_by('-created_at').values('mbit_per_second')[:1]
+            )).aggregate(avg=Avg('latest_network_download_speed'))['avg'],
+        },
+
+    }
+    regions = ["europe", "asia", "us"]
+    ping_overview = {}
+
+    for region in regions:
+        ping_overview[region] = {
+            "min": Provider.objects.annotate(latest_ping=Subquery(
+                PingResult.objects.filter(provider=OuterRef('pk'), region=region).order_by('-created_at').values('ping_udp')[:1]
+            )).aggregate(min=Min('latest_ping'))['min'],
+            "max": Provider.objects.annotate(latest_ping=Subquery(
+                PingResult.objects.filter(provider=OuterRef('pk'), region=region).order_by('-created_at').values('ping_udp')[:1]
+            )).aggregate(max=Max('latest_ping'))['max'],
+            "avg": Provider.objects.annotate(latest_ping=Subquery(
+                PingResult.objects.filter(provider=OuterRef('pk'), region=region).order_by('-created_at').values('ping_udp')[:1]
+            )).aggregate(avg=Avg('latest_ping'))['avg'],
+        }
+    overview['ping'] = ping_overview
+
+    return JsonResponse({"overview": overview})
