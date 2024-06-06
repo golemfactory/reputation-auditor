@@ -793,7 +793,14 @@ from django.db.models import Min, Max, Avg, Subquery, OuterRef
     description="This endpoint provides an overview of provider scores, including minimum, maximum, and average values for each metric based on the latest scores for each provider."
 )
 def get_score_overview(request):
-    providers = Provider.objects.all()
+    # Filter providers whose latest NodeStatusHistory is_online=True
+    latest_status_subquery = NodeStatusHistory.objects.filter(
+        provider=OuterRef('pk')
+    ).order_by('-timestamp').values('is_online')[:1]
+
+    providers = Provider.objects.annotate(
+        latest_status=Subquery(latest_status_subquery)
+    ).filter(latest_status=True)
 
     # Calculate uptime for each provider
     def calculate_uptime(provider):
