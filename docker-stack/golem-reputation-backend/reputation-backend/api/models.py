@@ -157,6 +157,7 @@ class GPUTask(models.Model):
     memory_total = models.IntegerField()  # Total memory in MB
     memory_free = models.IntegerField()  # Free memory in MB
     cuda_cap = models.DecimalField(max_digits=4, decimal_places=2)  # CUDA capability version
+    gpu_burn_gflops = models.IntegerField(null=True, blank=True)  # GFLOPS for GPU burn
 
 class NetworkBenchmark(models.Model):
     provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  
@@ -198,7 +199,7 @@ class PingResult(models.Model):
     ping_tcp = models.IntegerField()  # Ping result for TCP, e.g., 96
     ping_udp = models.IntegerField()  # Ping result for UDP, e.g., 96
     created_at = models.DateTimeField(auto_now_add=True, null=True)
-    region = models.CharField(max_length=255, default=os.environ.get('REGION', 'local'))
+    region = models.CharField(max_length=255, default='local')
     from_non_p2p_pinger = models.BooleanField(default=False)  # Whether the ping was from a non-P2P node. If it was and is_p2p is True, it's a P2P ping and we can assume the provider has opened the port.
     class Meta:
         indexes = [
