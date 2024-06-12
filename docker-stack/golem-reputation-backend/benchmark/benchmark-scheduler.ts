@@ -129,9 +129,15 @@ async function cronFunc(job: CronJob, redis: RedisClientType, benchmark: string)
   const nextTime = new Date(Date.now() + sleepTimeMs);
   console.log("Random wait time added, waiting until ", nextTime);
   await delay(sleepTimeMs);
+  let benchmarkName = benchmark;
   try {
-    if (benchmark === 'vm-nvidia') {
+    if (benchmark === 'all') {
+      benchmarkName = 'vm';
+      await executeVmBenchmark();
+      benchmarkName = 'vm-nvidia';
       await executeVmNvidiaBenchmark();
+    } else if (benchmark === 'vm-nvidia') {
+        await executeVmNvidiaBenchmark();
     } else {
       await executeVmBenchmark();
     }
@@ -139,7 +145,7 @@ async function cronFunc(job: CronJob, redis: RedisClientType, benchmark: string)
     await updateLastRun(redis);
     console.log("Benchmark executed successfully.");
   } catch (e) {
-    console.log("Benchmark failed:", e);
+    console.log(`Benchmark ${benchmarkName} failed:`, e);
   }
   job.start();
   console.log(`Next job will start at ${job.nextDate()} + random delay`);
@@ -172,7 +178,7 @@ async function main(benchmark: string) {
 program
   .option("-k, --redis-key <key>", "Redis key to store last run date.", REDIS_KEY)
   .option("-c, --cron-time <time>", "Cron time to run the benchmark.", CRON_TIME)
-  .option("-b, --benchmark <name>", "Benchmark to run (vm or vm-nvidia).", "vm")
+  .option("-b, --benchmark <name>", "Benchmark to run (all, vm or vm-nvidia).", "vm")
   .option('-d, --debug', "Debug mode. Run benchmark immediately and without random delay.", DEBUG)
   .action(async (options) => {
     REDIS_KEY = options.redisKey;

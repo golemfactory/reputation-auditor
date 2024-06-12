@@ -15,6 +15,9 @@ let totalRunCost = 0;
 
 const providerRunCost = new Map<string, number>;
 
+const IMAGE_NVIDIA_SMI = 'c317251c8e48a74e73f2bf0b74937a2d7e33e0a06ed04e043ab9e2ab';
+const IMAGE_BURN_TEST = '2318ef1a316f7e2710b514d4541360a40ecfe3d0e05f250384488eea4137484b';
+
 async function setupGolem(options: VmNvidiaBenchmarkRunnerOptions, taskId: string): Promise<Golem> {
   const events = new EventTarget();
   const EXPECTED_EXECUTION_TIME_SECONDS = 60 * 20
@@ -42,7 +45,9 @@ async function setupGolem(options: VmNvidiaBenchmarkRunnerOptions, taskId: strin
     requestStartTimeoutSec: REQUEST_START_TIMEOUT_SEC,
     requestTimeoutSec: EXPECTED_EXECUTION_TIME_SECONDS,
     deploy: {
-      imageHash: "c317251c8e48a74e73f2bf0b74937a2d7e33e0a06ed04e043ab9e2ab",
+      // imageHash: "c317251c8e48a74e73f2bf0b74937a2d7e33e0a06ed04e043ab9e2ab",
+      //imageHash: IMAGE_NVIDIA_SMI,
+      imageHash: IMAGE_BURN_TEST,
       // manifest: manifest.toString("base64"),
       maxReplicas: options.maxRuns,
       resources: { minCpu: 1, minMemGib: 0.5, minStorageGib: 12 },
@@ -78,6 +83,7 @@ export async function runTasks(options: VmNvidiaBenchmarkRunnerOptions, golem: G
     promises.push(
       golem.sendTask(async (ctx) => {
         try {
+          let lastResult: string = '0';
           logger.info(`Running task ${i} on ${ctx.provider?.id} (${ctx.provider?.name})`);
           const result = await ctx.run("nvidia-smi --query-gpu=name,pcie.link.gen.max,memory.total,memory.free,compute_cap --format=csv,noheader,nounits")
           // const result = await ctx.run('uname -a');
@@ -85,6 +91,20 @@ export async function runTasks(options: VmNvidiaBenchmarkRunnerOptions, golem: G
           const data = (result.stdout as string).split("\n")
             .map((line) => line.split(",").map((v) => v.trim()))[0];
           logger.info(`Task ${i} parsed: ${data}`);
+
+          try {
+            const burnTest = await ctx.run("cd /app && ./gpu_burn 20");
+            // console.log('Success', burnTest.result);
+            // console.log('STDERR', burnTest.stderr);
+            // console.log('STDOUT', burnTest.stdout);
+
+            for (const result of (burnTest.stdout as string).matchAll(/\(([0-9]+)\ Gflop\/s\)/g)) {
+              lastResult = result[1];
+            }
+            logger.info(`Task ${i} Burn test result: ${lastResult} Gflop/s on ${data[0]} - ${ctx.provider?.id} (${ctx.provider?.name})`);
+          } catch (e) {
+            logger.error(e, `Task ${i} Burn test failed`);
+          }
 
 
           taskStatuses.push({
@@ -103,7 +123,8 @@ export async function runTasks(options: VmNvidiaBenchmarkRunnerOptions, golem: G
               pcie: Number(data[1]),
               memory_total: Number(data[2]),
               memory_free: Number(data[3]),
-              cuda_cap: Number(data[4])
+              cuda_cap: Number(data[4]),
+              gpu_burn_gflops: Number(lastResult),
             }
           })
         } catch (e) {

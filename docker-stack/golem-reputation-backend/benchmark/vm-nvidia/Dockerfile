@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.3.1-base-ubuntu22.04
+FROM oguzpastirmaci/gpu-burn:latest
 VOLUME /golem/work
 VOLUME /golem/input
 VOLUME /golem/output
