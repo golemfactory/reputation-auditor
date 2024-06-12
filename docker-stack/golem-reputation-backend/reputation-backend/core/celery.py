@@ -24,7 +24,7 @@ def setup_periodic_tasks(sender, **kwargs):
         options={"queue": "default", "routing_key": "default"},
     )
     sender.add_periodic_task(
-        60.0,
+        300.0,
         monitor_nodes_task.s(),
         queue="uptime",
         options={"queue": "uptime", "routing_key": "uptime"},
