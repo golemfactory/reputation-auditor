@@ -188,7 +188,8 @@ def process_gpu_task(data_list):
             pcie=int(data['pcie']),
             memory_total=int(data['memory_total']),
             memory_free=int(data['memory_free']),
-            cuda_cap=Decimal(data['cuda_cap'])  # Use Decimal here
+            cuda_cap=Decimal(data['cuda_cap']),
+            gpu_burn_gflops=int(data['gpu_burn_gflops']),
         ))
 
     # Now, bulk create all GPUTask objects
