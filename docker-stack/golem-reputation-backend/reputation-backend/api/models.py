@@ -158,6 +158,7 @@ class GPUTask(models.Model):
     memory_free = models.IntegerField()  # Free memory in MB
     cuda_cap = models.DecimalField(max_digits=4, decimal_places=2)  # CUDA capability version
     gpu_burn_gflops = models.IntegerField(null=True, blank=True)  # GFLOPS for GPU burn
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
 
 class NetworkBenchmark(models.Model):
     provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  
