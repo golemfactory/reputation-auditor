@@ -1018,11 +1018,25 @@ def get_score_overview(request):
 
 from django.db.models import Avg
 
+class PerformanceLevel(str, Enum):
+    above_expected = "above expected"
+    as_expected = "as expected"
+    slightly_below_expected = "slightly below expected"
+    worse = "worse"
+
+class GPUPerformanceResponse(BaseModel):
+    node_id: str
+    performance: PerformanceLevel
+    provider_avg_gflops: float
+    identical_gpus_avg_gflops: float
+    error: str = None  # Optional field for error messages
+
 @api.get(
     "/provider/gpu/performance/comparison/{node_id}",
     tags=["Reputation"],
     summary="Evaluate GPU performance for a specific provider",
-    description="This endpoint evaluates the GPU performance of a specific provider compared to other identical GPU models in the database."
+    description="This endpoint evaluates the GPU performance of a specific provider compared to other identical GPU models in the database.",
+    response={200: GPUPerformanceResponse}
 )
 def evaluate_gpu_performance(request, node_id: str):
     try:
