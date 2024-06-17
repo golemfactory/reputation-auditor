@@ -1014,3 +1014,54 @@ def get_score_overview(request):
     overview['ping'] = ping_overview
 
     return JsonResponse({"overview": overview})
+
+
+from django.db.models import Avg
+
+@api.get(
+    "/providers/{node_id}/gpu_performance",
+    tags=["Reputation"],
+    summary="Evaluate GPU performance for a specific provider",
+    description="This endpoint evaluates the GPU performance of a specific provider compared to other identical GPU models in the database."
+)
+def evaluate_gpu_performance(request, node_id: str):
+    try:
+        provider = Provider.objects.get(node_id=node_id)
+    except Provider.DoesNotExist:
+        return JsonResponse({"error": "Provider not found"}, status=404)
+
+    # Fetch the GPU tasks for the given provider
+    provider_gpu_tasks = GPUTask.objects.filter(provider=provider)
+
+    if not provider_gpu_tasks.exists():
+        return JsonResponse({"error": "No GPU tasks found for this provider"}, status=404)
+
+    # Calculate the average gpu_burn_gflops for the provider's GPUs
+    provider_avg_gflops = provider_gpu_tasks.aggregate(avg_gflops=Avg('gpu_burn_gflops'))['avg_gflops']
+
+    # Calculate the average gpu_burn_gflops for identical GPU models in the database
+    identical_gpus_avg_gflops = GPUTask.objects.filter(
+        name__in=provider_gpu_tasks.values_list('name', flat=True),
+        pcie__in=provider_gpu_tasks.values_list('pcie', flat=True),
+        cuda_cap__in=provider_gpu_tasks.values_list('cuda_cap', flat=True)
+    ).exclude(provider=provider).aggregate(avg_gflops=Avg('gpu_burn_gflops'))['avg_gflops']
+
+    if identical_gpus_avg_gflops is None:
+        return JsonResponse({"error": "No comparison data available"}, status=404)
+
+    # Compare the provider's GPU performance with the average
+    if provider_avg_gflops >= identical_gpus_avg_gflops * 1.05:
+        performance = "above expected"
+    elif provider_avg_gflops >= identical_gpus_avg_gflops * 0.95:
+        performance = "as expected"
+    elif provider_avg_gflops >= identical_gpus_avg_gflops * 0.85:
+        performance = "slightly below expected"
+    else:
+        performance = "worse"
+
+    return JsonResponse({
+        "node_id": node_id,
+        "performance": performance,
+        "provider_avg_gflops": provider_avg_gflops,
+        "identical_gpus_avg_gflops": identical_gpus_avg_gflops
+    })
