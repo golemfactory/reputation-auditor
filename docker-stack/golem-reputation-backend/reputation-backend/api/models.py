@@ -148,6 +148,7 @@ class CpuBenchmark(models.Model):
             models.Index(fields=['events_per_second']),
             models.Index(fields=['provider', 'created_at']),
             models.Index(fields=['benchmark_name', 'created_at']),
+            models.Index(fields=['benchmark_name', 'provider_id']),  # Composite index
         ]
 
 class GPUTask(models.Model):
@@ -202,6 +203,7 @@ class PingResult(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     region = models.CharField(max_length=255, default='local')
     from_non_p2p_pinger = models.BooleanField(default=False)  # Whether the ping was from a non-P2P node. If it was and is_p2p is True, it's a P2P ping and we can assume the provider has opened the port.
+
     class Meta:
         indexes = [
             models.Index(fields=['provider']),
@@ -211,7 +213,9 @@ class PingResult(models.Model):
             models.Index(fields=['region']),
             models.Index(fields=['provider', 'is_p2p', 'region']),  # Composite index
             models.Index(fields=['provider', 'from_non_p2p_pinger']),  # New composite index
+            models.Index(fields=['provider', 'region', 'created_at']),  # Suggested composite index for optimization
         ]
+
 
 
 
