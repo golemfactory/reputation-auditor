@@ -1019,7 +1019,7 @@ def get_score_overview(request):
 from django.db.models import Avg
 
 @api.get(
-    "/providers/{node_id}/gpu_performance",
+    "/provider/gpu/performance/comparison/{node_id}",
     tags=["Reputation"],
     summary="Evaluate GPU performance for a specific provider",
     description="This endpoint evaluates the GPU performance of a specific provider compared to other identical GPU models in the database."
