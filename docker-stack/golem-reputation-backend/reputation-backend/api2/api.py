@@ -70,7 +70,7 @@ def list_provider_scores(request, network: str = Query('polygon', description="T
         return JsonResponse({"error": "Data not available"}, status=503)
 
 
-from api.models import Provider, CpuBenchmark, NodeStatusHistory, TaskCompletion, BlacklistedProvider, BlacklistedOperator, MemoryBenchmark, DiskBenchmark, NetworkBenchmark, PingResult
+from api.models import Provider, CpuBenchmark, NodeStatusHistory, TaskCompletion, BlacklistedProvider, BlacklistedOperator, MemoryBenchmark, DiskBenchmark, NetworkBenchmark, PingResult, GPUTask
 from api.scoring import calculate_uptime, penalty_weight
 from django.db.models import Subquery, OuterRef
 
@@ -96,6 +96,8 @@ def filter_providers(
     minProviderAge: Optional[int] = Query(None, description="Minimum number of days since provider creation. This filter helps exclude newer providers that may show a high uptime percentage simply because they've been operational for a short period, such as a provider with 99% uptime over two days, which may not be indicative of long-term reliability for requestors looking to run long-running services."),
     minUptime: Optional[float] = Query(None, description="Minimum uptime percentage"),
     maxUptime: Optional[float] = Query(None, description="Maximum uptime percentage"),
+    minGPUScore: Optional[float] = Query(None, description="Minimum GPU benchmark score"),
+    maxGPUScore: Optional[float] = Query(None, description="Maximum GPU benchmark score"),
     minCpuMultiThreadScore: Optional[float] = Query(None, description="Minimum CPU multi-thread benchmark score"),
     maxCpuMultiThreadScore: Optional[float] = Query(None, description="Maximum CPU multi-thread benchmark score"),
     minCpuSingleThreadScore: Optional[float] = Query(None, description="Minimum CPU single-thread benchmark score"),
@@ -420,6 +422,20 @@ maxMemoryRandWrite: Optional[float] = Query(None, description="Maximum random wr
             eligible_providers = eligible_providers.exclude(
                 Q(pingresult__is_p2p=True) & Q(pingresult__from_non_p2p_pinger=True)
             )
+
+    if minGPUScore is not None:
+        eligible_providers = eligible_providers.annotate(latest_gpu_score=Subquery(
+            GPUTask.objects.filter(
+                provider=OuterRef('pk')
+            ).order_by('-created_at').values('gpu_burn_gflops')[:1]
+        )).filter(latest_gpu_score__gte=minGPUScore)
+
+    if maxGPUScore is not None:
+        eligible_providers = eligible_providers.annotate(latest_gpu_score=Subquery(
+            GPUTask.objects.filter(
+                provider=OuterRef('pk')
+            ).order_by('-created_at').values('gpu_burn_gflops')[:1]
+        )).filter(latest_gpu_score__lte=maxGPUScore)
     
     provider_ids = eligible_providers.values_list('node_id', flat=True)
     return {"provider_ids": list(provider_ids)}

@@ -378,4 +378,23 @@ def online_provider_summary(request):
         })
 
     return JsonResponse(result, safe=False)
+from api.models import GPUTask
+@api.get("/benchmark/gpu/{node_id}")
+def get_gpu_benchmark(request, node_id: str):
+    provider = Provider.objects.filter(node_id=node_id).first()
+    if not provider:
+        return JsonResponse({"detail": "Provider not found"}, status=404)
 
+    benchmarks = GPUTask.objects.filter(provider=provider).values(
+        'gpu_burn_gflops', 'created_at'
+    )
+
+    scores = [benchmark['gpu_burn_gflops'] for benchmark in benchmarks]
+
+    result = {
+        "data": [{"score": benchmark['gpu_burn_gflops'], "timestamp": benchmark['created_at'].timestamp()} for benchmark in benchmarks],
+        "deviation": calculate_deviation(scores),
+        "summary": get_summary(calculate_deviation(scores))
+    }
+
+    return JsonResponse(result)
