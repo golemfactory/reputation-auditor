@@ -1017,7 +1017,8 @@ def get_score_overview(request):
 
 
 from django.db.models import Avg
-
+from pydantic import BaseModel
+from enum import Enum
 class PerformanceLevel(str, Enum):
     above_expected = "above expected"
     as_expected = "as expected"
