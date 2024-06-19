@@ -1,4 +1,5 @@
 import { TaskCompletion, ProviderData, Benchmark } from "./types"
+import { Logger } from "pino";
 const HOST = process.env.API_HOST ?? (process.env.DOCKER === "true" ? "django:8002" : "api.localhost")
 const HTTP = process.env.HTTP ?? "http";
 const URL=`${HTTP}://${HOST}`
@@ -7,7 +8,7 @@ export async function delay(ms: number) {
     return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-export async function bulkSubmitTaskStatuses(taskStatuses: TaskCompletion[]) {
+export async function bulkSubmitTaskStatuses(taskStatuses: TaskCompletion[], logger: Logger) {
     if (!taskStatuses.length) return
     try {
         const endpoint = `${URL}/v1/submit/task/status/bulk`
@@ -26,13 +27,13 @@ export async function bulkSubmitTaskStatuses(taskStatuses: TaskCompletion[]) {
             throw new Error("Failed to submit task statuses")
         }
         const responseBody = await response.json()
-        console.log(responseBody) // Log success message or handle further as required
+        logger.info(responseBody) // Log success message or handle further as required
     } catch (error) {
-        console.error("Error in bulkSubmitTaskStatuses:", error)
+        logger.error(error, "Error in bulkSubmitTaskStatuses:")
     }
 }
 
-export async function fetchProvidersData(): Promise<ProviderData[]> {
+export async function fetchProvidersData(logger: Logger): Promise<ProviderData[]> {
     try {
         const response = await fetch("https://api.stats.golem.network/v2/network/online")
         if (!response.ok) {
@@ -49,12 +50,12 @@ export async function fetchProvidersData(): Promise<ProviderData[]> {
         // Cast the data to ProviderData[] now that we've performed a check
         return data as ProviderData[]
     } catch (error) {
-        console.error(error)
+        logger.error(error, 'Failed to fetch providers data');
         process.exit(1)
     }
 }
 
-export async function submitBulkBenchmark(benchmarks: Benchmark[]): Promise<string | undefined> {
+export async function submitBulkBenchmark(benchmarks: Benchmark[], logger: Logger): Promise<string | undefined> {
     try {
         // Updated endpoint to handle bulk benchmark submissions
         const endpoint = `${URL}/v1/benchmark/bulk`
@@ -71,18 +72,19 @@ export async function submitBulkBenchmark(benchmarks: Benchmark[]): Promise<stri
         if (response.ok) {
             return "Bulk benchmark submission successful!"
         } else {
-            console.log("Error in bulk benchmark submission", benchmarks)
-            const errorResponse = await response.json()
-            console.error("Response Error:", errorResponse)
+            logger.error({
+                error: await response.json().catch((e) => response.statusText),
+                data: benchmarks,
+            }, "Error in bulk benchmark submission", )
             throw new Error("Bulk benchmark submission failed")
         }
     } catch (error) {
-        console.error("Error:", error)
+        logger.error(error, "Error:")
         throw error // Re-throw the error to handle it or log it in the calling function
     }
 }
 
-export async function getBlacklistedProviders(): Promise<string[]> {
+export async function getBlacklistedProviders(logger: Logger): Promise<string[]> {
     try {
         const endpoint = `${URL}/v1/blacklisted-providers`
 
@@ -97,14 +99,14 @@ export async function getBlacklistedProviders(): Promise<string[]> {
             const data = (await response.json()) as string[]
             return data
         } else {
-            process.exit(1)
+            throw new Error(`Failed to get blacklisted providers: ${response.status} ${response.statusText}`)
         }
     } catch (error) {
-        console.error("Error:", error)
+        logger.error(error, "Failed to get blacklisted providers")
         process.exit(1)
     }
 }
-export async function getBlacklistedOperators(): Promise<string[] | undefined> {
+export async function getBlacklistedOperators(logger: Logger): Promise<string[] | undefined> {
     try {
         const endpoint = `${URL}/v1/blacklisted-operators`
 
@@ -119,23 +121,22 @@ export async function getBlacklistedOperators(): Promise<string[] | undefined> {
             const data = (await response.json()) as string[]
             return data
         } else {
-            console.error(`Failed to initialize blacklisted providers, reponse not OK: ${response.status} ${response.statusText}`)
-            console.error(await response.text())
+            logger.error(`Failed to initialize blacklisted providers, reponse not OK: ${response.status} ${response.statusText}`)
+            logger.error(await response.text())
             process.exit(1)
         }
     } catch (error) {
-        console.error("Failed to initialize blacklisted providers:", error)
-        process.exit(1)
+        logger.error(error, "Failed to initialize blacklisted providers:")
+        process.exit(1);
     }
 }
 
-export async function sendStartTaskSignal(): Promise<string> {
-    console.log(`${HOST}  {${process.env.BACKEND_API_TOKEN}}`);
+export async function sendStartTaskSignal(logger: Logger): Promise<string> {
     try {
         const endpoint = `${URL}/v1/task/start`
         const jsonData = JSON.stringify({
             name: "spinup suite",
-        })
+        });
 
         const response = await fetch(endpoint, {
             method: "POST",
@@ -151,20 +152,19 @@ export async function sendStartTaskSignal(): Promise<string> {
             const data = (await response.json()) as { id: string }
             return data.id
         } else {
-            console.log(`Error in task start: ${jsonData}`)
             const errorBody = await response.text()
             throw errorBody
         }
     } catch (error) {
-        console.error("Error:", error)
+        logger.error(error, `Error in task start`)
         throw error;
     }
 }
 
-export async function sendStopTaskSignal(taskId: string, cost: number): Promise<string | undefined> {
+export async function sendStopTaskSignal(taskId: string, cost: number, logger: Logger): Promise<string | undefined> {
     try {
         const endpoint = `${URL}/v1/task/end/${taskId}?cost=${cost}`
-        console.log(`Sending stop signal to ${endpoint}`, cost, taskId)
+        logger.info(`Sending stop signal task ${taskId}, cost ${cost}`);
         const response = await fetch(endpoint, {
             method: "POST",
             headers: {
@@ -180,7 +180,7 @@ export async function sendStopTaskSignal(taskId: string, cost: number): Promise<
             throw errorBody
         }
     } catch (error) {
-        console.error("Error:", error)
+        logger.error(error, "Failed to send stop signal");
     }
 }
 
@@ -189,40 +189,43 @@ export async function sendOfferFromProvider(
     nodeId: string,
     taskId: string,
     accepted: boolean,
-    reason: string
+    reason: string,
+    logger: Logger,
 ): Promise<string | undefined> {
+    const data = {
+        node_id: nodeId,
+        offer,
+        task_id: taskId,
+        accepted: accepted,
+        reason: reason,
+    };
+
     try {
         const endpoint = `${URL}/v1/task/offer/${taskId}`
-        const data = JSON.stringify({
-            node_id: nodeId,
-            offer,
-            task_id: taskId,
-            accepted: accepted,
-            reason: reason,
-        })
+        const json = JSON.stringify(data);
         const response = await fetch(endpoint, {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${process.env.BACKEND_API_TOKEN}`,
             },
-            body: data,
+            body: json,
         })
 
         if (response.ok) {
             return "success"
         } else {
-            console.log(`Error in offer submission: ${data}`)
             const errorBody = (await response.json()) as { error: string }
             throw errorBody
         }
     } catch (error) {
-        console.error("Error:", error)
+        logger.error({error, data}, "Failed log offer")
     }
 }
 
 export async function sendBulkTaskCostUpdates(
-    updates: Array<{ taskId: string; providerId: string; cost: number }>
+    updates: Array<{ taskId: string; providerId: string; cost: number }>,
+    logger: Logger,
 ): Promise<string | undefined> {
     try {
         const endpoint = `${URL}/v1/tasks/update-costs`
@@ -246,12 +249,15 @@ export async function sendBulkTaskCostUpdates(
         if (response.ok) {
             return "success"
         } else {
-            console.error(`Error in sending bulk task cost updates: ${data}`)
             const errorBody = (await response.json()) as { error: string }
-            console.error(errorBody)
+            throw errorBody;
         }
     } catch (error) {
-        console.error("Error:", error)
+        logger.error({
+            error,
+            data: updates,
+          }, "Error in sending bulk task cost updates:"
+        )
         return undefined
     }
 }

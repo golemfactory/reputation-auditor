@@ -3,7 +3,7 @@ import {
     ActivityStateEnum,
     AgreementPoolService,
     GftpStorageProvider,
-    Logger,
+    Logger as GolemLogger,
     MarketService,
     Package,
     PaymentService,
@@ -21,6 +21,7 @@ import { Proposal } from "@golem-sdk/golem-js/dist/market"
 
 import genericPool from "generic-pool"
 import debug, { Debugger } from "debug"
+import { Logger } from "pino";
 
 export class GolemError extends Error {
     constructor(msg: string, public readonly previous?: unknown, public readonly activity?: Activity) {
@@ -36,7 +37,7 @@ class CustomEvent<T> extends Event {
     }
 }
 
-export const createLogger = (ns: string): Logger => {
+export const createLogger = (ns: string): GolemLogger => {
     const log = debug(ns)
 
     const level = "debug"
@@ -157,14 +158,14 @@ export class Golem {
 
     private activityPool: genericPool.Pool<Activity>
 
-    private readonly logger: Debugger
+    private readonly logger: Logger;
 
     public config: GolemConfig
 
     private usedProviders = new Set<string>()
 
-    constructor(config: GolemConfig) {
-        this.logger = debug("golem")
+    constructor(config: GolemConfig, logger: Logger) {
+        this.logger = logger;
 
         this.config = config
 
@@ -222,7 +223,7 @@ export class Golem {
         const allocation = await this.paymentService.createAllocation({
             // Hardcoded for now
             // budget: this.getBudgetEstimate(),
-            budget: 30,
+            budget: 3,
             expires: this.getExpectedDurationSeconds() * 1000,
         })
 
@@ -246,7 +247,7 @@ export class Golem {
             minCpuThreads: this.config.deploy.resources.minCpu,
             minStorageGib: this.config.deploy.resources.minStorageGib,
             logger: createLogger("golem-js:package"),
-        })
+        });
 
         await Promise.all([
             this.agreementService.run(),
@@ -259,7 +260,7 @@ export class Golem {
 
     async sendTask<T>(task: Worker<T>): Promise<T | undefined> {
         const activity = await this.activityPool.acquire()
-        this.logger("Acquired activity %s to execute the task", activity.id)
+        this.logger.debug(`Acquired activity ${activity.id} to execute the task`);
 
         try {
             const ctx = new WorkContext(activity, {
@@ -287,41 +288,41 @@ export class Golem {
 
             return result
         } catch (err) {
-            this.logger(`Running the task on Golem failed with this error: %o`, err)
+            this.logger.error(err, `Running the task on Golem failed with this error`);
             throw new GolemError("Failed to execute the task on Golem", err, activity)
         } finally {
             await this.activityPool.destroy(activity)
-            this.logger("Released activity %s after task execution", activity.id)
+            this.logger.debug(`Released activity %s after task execution ${activity.id}`);
         }
     }
 
     async stop() {
-        this.logger("Waiting for the activity pool to drain")
+        this.logger.debug("Waiting for the activity pool to drain");
         await this.activityPool.drain()
-        this.logger("Activity pool drained")
+        this.logger.debug("Activity pool drained");
 
         // FIXME: This component should really make sure that we accept all invoices and don't wait for payment
         //   as that's a different process executed by the payment driver. Accepted means work is done.
-        this.logger("Stopping core services")
+        this.logger.debug("Stopping core services")
         await this.marketService.end()
 
         // Order of below is important
         await this.agreementService.end()
         await this.paymentService.end()
-        this.logger("Stopping core services finished")
+        this.logger.debug("Stopping core services finished")
 
         // Cleanup resource allocations which are not inherently visible in the constructor
-        this.logger("Cleaning up remaining resources")
+        this.logger.debug("Cleaning up remaining resources")
         await this.storageProvider.close()
         await this.yagna.end()
-        this.logger("Resources cleaned")
+        this.logger.debug("Resources cleaned")
     }
 
     private buildActivityPool() {
         return genericPool.createPool<Activity>(
             {
                 create: async (): Promise<Activity> => {
-                    this.logger("Creating new activity to add to pool")
+                    this.logger.info("Creating new activity to add to pool")
                     const agreement = await this.agreementService.getAgreement()
                     // await this.marketService.end();
 
@@ -336,11 +337,11 @@ export class Golem {
                         activityRequestTimeout: 50000,
                     })
 
-                    console.log(`Activity ${activity.id} on ${activity.agreement.provider.id}`)
+                    this.logger.info(`Activity ${activity.id} on ${activity.agreement.provider.id}`)
                     return activity
                 },
                 destroy: async (activity: Activity) => {
-                    this.logger("Destroying activity from the pool")
+                    this.logger.debug("Destroying activity from the pool")
                     await activity.stop()
 
                     // FIXME #sdk Use Agreement and not string
@@ -353,27 +354,27 @@ export class Golem {
                 validate: async (activity: Activity) => {
                     let retries = 5
                     let state
-                    this.logger("Validating activity in the pool")
+                    this.logger.debug("Validating activity in the pool")
 
                     while (retries > 0) {
                         try {
-                            this.logger("Getting state of activity")
+                            this.logger.debug("Getting state of activity")
                             state = await activity.getState()
                             break // If getState succeeds, break out of the loop
                         } catch (error) {
                             retries--
                             if (retries === 0) {
-                                this.logger("Failed to get state after multiple retries. Terminating agreement")
+                                this.logger.error("Failed to get state after multiple retries. Terminating agreement")
                                 // Terminate agreement
                                 await this.agreementService.releaseAgreement(activity.agreement.id, true)
                             }
-                            this.logger("Request timed out, retrying...")
+                            this.logger.info("Request timed out, retrying...")
                             await new Promise((resolve) => setTimeout(resolve, 1000)) // Wait for 1 second before retrying
                         }
                     }
 
                     const result = state !== ActivityStateEnum.Terminated
-                    this.logger("Validating activity in the pool, result: %s, state: %s", result, state)
+                    this.logger.debug("Validating activity in the pool, result: %s, state: %s", result, state)
 
                     if (this.config.computedAlready.includes(activity.agreement.id)) {
                         return false
@@ -431,22 +432,33 @@ export class Golem {
         return async (proposal) => {
             let accepted = true
             let reason = ""
+            let skipSubmit = false;
 
-            if (this.isFromDisallowedOperator(proposal)) {
-                console.log("Discarding proposal because it's from a disallowed operator")
+            if (this.usedProviders.has(proposal.provider.id)) {
+                accepted = false
+                reason = "Provider already benchmarked.";
+                let skipSubmit = false;
+            } else if (this.isFromDisallowedOperator(proposal)) {
                 accepted = false
                 reason = "Provider's wallet address is blacklisted."
             } else if (this.isFromDisallowedProvider(proposal)) {
                 accepted = false
                 reason = "Provider is blacklisted due to failures in the past."
             } else if (this.isOverpricedProvider(proposal.provider.id, proposal)) {
-                console.log("Discarding proposal because it's from an overpriced provider")
                 accepted = false
                 reason = "The provider's pricing falls outside our budget range or has a non-zero start price."
             }
 
+            if (!accepted) {
+                this.logger.info({provider: proposal.provider, reason, },`Rejecting proposal`);
+            } else {
+                this.logger.info({provider: proposal.provider },`Proposal accepted`);
+            }
+
             // Send offer with the decision and reason
-            await sendOfferFromProvider(proposal.properties, proposal.provider.id, this.config.taskId, accepted, reason)
+            if (!skipSubmit) {
+                await sendOfferFromProvider(proposal.properties, proposal.provider.id, this.config.taskId, accepted, reason, this.logger);
+            }
 
             return accepted
         }
@@ -476,18 +488,19 @@ export class Golem {
     private isFromDisallowedProvider(proposal: Proposal) {
         return Boolean(this.config.market.withoutProviders?.includes(proposal.provider.id))
     }
+
     private isOverpricedProvider(providerId: string, proposal: Proposal): boolean {
         const providerData = this.config.market.statsData?.find((provider: ProviderData) => provider.node_id === providerId)
 
         if (!providerData || !providerData.runtimes?.vm) {
-            console.log(
+            this.logger.info(
                 `Provider data or VM runtime information is missing for ${providerId}. Assuming provider is not verifiable, hence considering it overpriced.`
             )
             return true // Treat as overpriced if critical data is missing, aligning with cautious approach
         }
 
         if (proposal.pricing.start > 0) {
-            console.log(`Proposal from provider ${providerId} has a non-zero start price. Considered overpriced to protect the budget.`)
+            this.logger.info(`Proposal from provider ${providerId} has a non-zero start price. Considered overpriced to protect the budget.`)
             return true
         }
 
@@ -497,11 +510,11 @@ export class Golem {
         if (times_more_expensive === null) {
             if (times_cheaper !== null && times_cheaper > 0) {
                 // Provider is cheaper than an average AWS instance, hence not overpriced
-                console.log(`Provider ${providerId} is cheaper than the average AWS instance. Not considered overpriced.`)
+                this.logger.info(`Provider ${providerId} is cheaper than the average AWS instance. Not considered overpriced.`)
                 return false
             } else {
                 // Lack of comparison data suggests uncertainty, consider as overpriced to be cautious
-                console.log(
+                this.logger.info(
                     `No comparative pricing data available for provider ${providerId}, assuming overpriced due to lack of transparency.`
                 )
                 return true
@@ -510,18 +523,18 @@ export class Golem {
 
         // If it's known to be overpriced but within a 20% margin, consider it acceptable/not overpriced
         if (is_overpriced && times_more_expensive <= 1.2) {
-            console.log(`Provider ${providerId} is slightly overpriced but within acceptable range. Not considered overpriced.`)
+            this.logger.info(`Provider ${providerId} is slightly overpriced but within acceptable range. Not considered overpriced.`)
             return false
         }
 
         // Explicitly overpriced beyond the acceptable margin
         if (is_overpriced && times_more_expensive > 1.2) {
-            console.log(`Provider ${providerId} is overpriced beyond acceptable range. Considered overpriced.`)
+            this.logger.info(`Provider ${providerId} is overpriced beyond acceptable range. Considered overpriced.`)
             return true
         }
 
         // If the provider is not flagged as overpriced or within acceptable margin, it's not considered overpriced
-        console.log(`Provider ${providerId} is not overpriced. Accepting the proposal.`)
+        this.logger.info(`Provider ${providerId} is not overpriced. Accepting the proposal.`)
         return false
     }
 }

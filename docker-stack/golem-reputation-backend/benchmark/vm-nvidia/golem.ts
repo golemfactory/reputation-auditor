@@ -3,7 +3,7 @@ import {
     ActivityStateEnum,
     AgreementPoolService,
     GftpStorageProvider,
-    Logger,
+    Logger as GolemLogger,
     MarketService,
     Package,
     PaymentService,
@@ -13,14 +13,14 @@ import {
     Worker,
     Yagna,
 } from "@golem-sdk/golem-js"
-import { sendOfferFromProvider, sendStartTaskSignal } from "../utils"
 import { ProviderData } from "../types"
 // TODO: All the things dragged from `dist` should be exported from the main definition file
 import { YagnaApi } from "@golem-sdk/golem-js/dist/utils"
 import { Proposal } from "@golem-sdk/golem-js/dist/market"
 
 import genericPool from "generic-pool"
-import debug, { Debugger } from "debug"
+import debug from "debug"
+import { Logger } from "pino";
 
 export class GolemError extends Error {
     constructor(msg: string, public readonly previous?: unknown, public readonly activity?: Activity) {
@@ -36,7 +36,7 @@ class CustomEvent<T> extends Event {
     }
 }
 
-export const createLogger = (ns: string): Logger => {
+export const createLogger = (ns: string): GolemLogger => {
     const log = debug(ns)
 
     const level = "debug"
@@ -158,14 +158,14 @@ export class Golem {
 
     private activityPool: genericPool.Pool<Activity>
 
-    private readonly logger: Debugger
+    private readonly logger
 
     public config: GolemConfig
 
     private usedProviders = new Set<string>()
 
-    constructor(config: GolemConfig) {
-        this.logger = debug("golem")
+    constructor(config: GolemConfig, logger: Logger) {
+        this.logger = logger;
 
         this.config = config
 
@@ -261,7 +261,7 @@ export class Golem {
 
     async sendTask<T>(task: Worker<T>): Promise<T | undefined> {
         const activity = await this.activityPool.acquire()
-        this.logger("Acquired activity %s to execute the task", activity.id)
+        this.logger.debug(`Acquired activity ${activity.id} to execute the task`);
 
         try {
             const ctx = new WorkContext(activity, {
@@ -289,72 +289,84 @@ export class Golem {
 
             return result
         } catch (err) {
-            this.logger(`Running the task on Golem failed with this error: %o`, err)
+            this.logger.error(err, `Running the task on Golem failed with this error`);
             throw new GolemError("Failed to execute the task on Golem", err, activity)
         } finally {
             await this.activityPool.destroy(activity)
-            this.logger("Released activity %s after task execution", activity.id)
+            this.logger.debug(`Released activity %s after task execution ${activity.id}`);
         }
     }
 
     async stop() {
-        this.logger("Waiting for the activity pool to drain")
+        this.logger.debug("Waiting for the activity pool to drain");
         await this.activityPool.drain()
-        this.logger("Activity pool drained")
+        this.logger.debug("Activity pool drained");
 
         // FIXME: This component should really make sure that we accept all invoices and don't wait for payment
         //   as that's a different process executed by the payment driver. Accepted means work is done.
-        this.logger("Stopping core services")
+        this.logger.debug("Stopping core services")
         await this.marketService.end()
 
         // Order of below is important
         await this.agreementService.end()
         await this.paymentService.end()
-        this.logger("Stopping core services finished")
+        this.logger.debug("Stopping core services finished")
 
         // Cleanup resource allocations which are not inherently visible in the constructor
-        this.logger("Cleaning up remaining resources")
+        this.logger.debug("Cleaning up remaining resources")
         await this.storageProvider.close()
         await this.yagna.end()
-        this.logger("Resources cleaned")
+        this.logger.debug("Resources cleaned")
     }
 
     private buildActivityPool() {
         return genericPool.createPool<Activity>(
             {
                 create: async (): Promise<Activity> => {
-                    this.logger("Creating new activity to add to pool")
-                    const agreement = await this.agreementService.getAgreement()
-                    // await this.marketService.end();
+                    this.logger.debug("Creating new activity to add to pool")
+                    try {
+                        const agreement = await this.agreementService.getAgreement()
+                        // await this.marketService.end();
 
-                    this.paymentService.acceptPayments(agreement)
+                        this.paymentService.acceptPayments(agreement)
 
-                    const MIN_ACTIVITY_DURATION = 20 * 60
-                    // FIXME #sdk Use Agreement and not string
+                        const MIN_ACTIVITY_DURATION = 20 * 60
+                        // FIXME #sdk Use Agreement and not string
 
-                    const activity = await Activity.create(agreement, this.api, {
-                        activityExecuteTimeout: (this.config.requestTimeoutSec ?? MIN_ACTIVITY_DURATION) * 1000,
-                        activityExeBatchResultPollIntervalSeconds: 20,
-                    })
+                        const activity = await Activity.create(agreement, this.api, {
+                            activityExecuteTimeout: (this.config.requestTimeoutSec ?? MIN_ACTIVITY_DURATION) * 1000,
+                            activityExeBatchResultPollIntervalSeconds: 20,
+                        })
 
-                    console.log(`Activity ${activity.id} on ${activity.agreement.provider.id} (${activity.agreement.provider.name})`)
-                    return activity
+                        this.logger.info(`Activity ${activity.id} on ${activity.agreement.provider.id}`)
+                        return activity
+                    } catch (e) {
+                        this.logger.error(e, "Failed to create activity in activity pool")
+                        throw e;
+                    }
                 },
                 destroy: async (activity: Activity) => {
-                    this.logger("Destroying activity from the pool")
-                    await activity.stop()
+                    this.logger.info(`Destroying activity ${activity.id} from the pool`);
+                    try {
+                        await activity.stop();
+                        this.logger.info(`Activity ${activity.id} stopped`);
 
-                    // FIXME #sdk Use Agreement and not string
-                    await this.agreementService.releaseAgreement(activity.agreement.id, false)
-                    // destroy agreement after releasing
+                        // FIXME #sdk Use Agreement and not string
+                        await this.agreementService.releaseAgreement(activity.agreement.id, false)
+                        // destroy agreement after releasing
+                        this.logger.info(`Agreement from ${activity.id} activity released`);
 
-                    // FIXME #sdk stopPayments? stopAcceptDebitNotes? In the logs I see debit notes from past activities, which I terminated?
-                    //  Or did the terminate fail and the SDK does not send that?
+                        // FIXME #sdk stopPayments? stopAcceptDebitNotes? In the logs I see debit notes from past activities, which I terminated?
+                        //  Or did the terminate fail and the SDK does not send that?
+                    } catch (e) {
+                        this.logger.error(e, `Failed to destroy activity ${activity.id}`)
+                        throw e;
+                    }
                 },
                 validate: async (activity: Activity) => {
                     const state = await activity.getState()
                     const result = state !== ActivityStateEnum.Terminated
-                    this.logger("Validating activity in the pool, result: %s, state: %s", result, state)
+                    this.logger.debug("Validating activity in the pool")
                     // validate if activity has already been used else terminate activity return false
                     if (this.config.computedAlready.includes(activity.agreement.id)) {
                         return false
@@ -412,25 +424,30 @@ export class Golem {
             let accepted = true
             let reason = ""
 
-            console.log('Incoming proposal!', proposal.provider);
 
-            if (this.isFromDisallowedOperator(proposal)) {
-                console.log("Discarding proposal because it's from a disallowed operator")
+            if (this.usedProviders.has(proposal.provider.id)) {
+                accepted = false
+                reason = "Provider already benchmarked.";
+            } else if (this.isFromDisallowedOperator(proposal)) {
                 accepted = false
                 reason = "Provider's wallet address is blacklisted."
             } else if (this.isFromDisallowedProvider(proposal)) {
                 accepted = false
                 reason = "Provider is blacklisted due to failures in the past."
             } else if (this.isOverpricedProvider(proposal.provider.id, proposal)) {
-                console.log("Discarding proposal because it's from an overpriced provider")
                 accepted = false
                 reason = "The provider's pricing falls outside our budget range or has a non-zero start price."
+            }
+
+            if (!accepted) {
+                this.logger.info({provider: proposal.provider, reason, },`Rejecting proposal`);
             } else {
-                console.log('Proposal accepted!', proposal.provider);
+                this.logger.info({provider: proposal.provider },`Proposal accepted`);
             }
 
             // Send offer with the decision and reason
-            await sendOfferFromProvider(proposal.properties, proposal.provider.id, this.config.taskId, accepted, reason)
+            // FIXME: Uncomment this!
+            //await sendOfferFromProvider(proposal.properties, proposal.provider.id, this.config.taskId, accepted, reason)
 
             return accepted
         }

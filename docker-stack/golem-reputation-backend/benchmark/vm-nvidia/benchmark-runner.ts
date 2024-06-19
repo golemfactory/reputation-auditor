@@ -15,10 +15,10 @@ let totalRunCost = 0;
 
 const providerRunCost = new Map<string, number>;
 
-const IMAGE_NVIDIA_SMI = 'c317251c8e48a74e73f2bf0b74937a2d7e33e0a06ed04e043ab9e2ab';
+// const IMAGE_NVIDIA_SMI = 'c317251c8e48a74e73f2bf0b74937a2d7e33e0a06ed04e043ab9e2ab';
 const IMAGE_BURN_TEST = '2318ef1a316f7e2710b514d4541360a40ecfe3d0e05f250384488eea4137484b';
 
-async function setupGolem(options: VmNvidiaBenchmarkRunnerOptions, taskId: string): Promise<Golem> {
+async function setupGolem(options: VmNvidiaBenchmarkRunnerOptions, taskId: string, logger: Logger): Promise<Golem> {
   const events = new EventTarget();
   const EXPECTED_EXECUTION_TIME_SECONDS = 60 * 20
   const EXPECTED_DEPLOYMENT_TIME_SECONDS = 180; //60
@@ -66,7 +66,7 @@ async function setupGolem(options: VmNvidiaBenchmarkRunnerOptions, taskId: strin
     computedAlready: [],
     eventTarget: events,
     taskId,
-  });
+  }, logger);
 
   return golem;
 }
@@ -148,11 +148,11 @@ export async function runTasks(options: VmNvidiaBenchmarkRunnerOptions, golem: G
 
   await Promise.allSettled(promises);
 
-  await submitBulkBenchmark(benchmarkData)
-  await bulkSubmitTaskStatuses(taskStatuses)
+  await submitBulkBenchmark(benchmarkData, logger)
+  await bulkSubmitTaskStatuses(taskStatuses, logger);
 
   logger.info({data: benchmarkData}, 'Benchmark data');
-  console.log({data: taskStatuses}, 'Benchmark task statuses');
+  logger.info({data: taskStatuses}, 'Benchmark task statuses');
 
 
   let bulkUpdates = []
@@ -169,7 +169,7 @@ export async function runTasks(options: VmNvidiaBenchmarkRunnerOptions, golem: G
   }
 
   if (bulkUpdates.length > 0) {
-    await sendBulkTaskCostUpdates(bulkUpdates).then((result) => {
+    await sendBulkTaskCostUpdates(bulkUpdates, logger).then((result) => {
       if (result === "success") {
         logger.info("Bulk task cost updates sent successfully.")
       } else {
@@ -194,9 +194,9 @@ export async function benchmarkRunner(options: VmNvidiaBenchmarkRunnerOptions): 
 
   // Allocate new task ID in the reputation system;
   logger.info(`Allocating new GPU reputation task`);
-  const taskId = await sendStartTaskSignal();
+  const taskId = await sendStartTaskSignal(logger);
 
-  const golem = await setupGolem(options, taskId);
+  const golem = await setupGolem(options, taskId, logger);
   try {
     await golem.start();
   } catch (error) {
@@ -215,7 +215,7 @@ export async function benchmarkRunner(options: VmNvidiaBenchmarkRunnerOptions): 
     }
   }
 
-  await sendStopTaskSignal(taskId, totalRunCost);
+  await sendStopTaskSignal(taskId, totalRunCost, logger);
 
 
   try {
