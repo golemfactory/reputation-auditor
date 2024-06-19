@@ -118,25 +118,48 @@ def get_provider_benchmark_scores(provider, recent_n=3):
 from django.db.models import Max, Avg
 
 def get_normalized_cpu_scores():
+    # Get the maximum events_per_second for single and multi-thread benchmarks
     max_single_thread_eps = CpuBenchmark.objects.filter(benchmark_name="CPU Single-thread Benchmark").aggregate(Max('events_per_second'))['events_per_second__max']
     max_multi_thread_eps = CpuBenchmark.objects.filter(benchmark_name="CPU Multi-thread Benchmark").aggregate(Max('events_per_second'))['events_per_second__max']
 
+    # Get all providers
+    providers = Provider.objects.all()
+
+    # Get the latest 5 benchmarks for each provider and benchmark type
+    latest_benchmarks = CpuBenchmark.objects.filter(
+        benchmark_name__in=["CPU Single-thread Benchmark", "CPU Multi-thread Benchmark"]
+    ).order_by('provider', 'benchmark_name', '-id')
+
+    # Create a dictionary to store the latest 5 benchmarks for each provider and benchmark type
+    latest_benchmarks_dict = {}
+    for benchmark in latest_benchmarks:
+        key = (benchmark.provider_id, benchmark.benchmark_name)
+        if key not in latest_benchmarks_dict:
+            latest_benchmarks_dict[key] = []
+        if len(latest_benchmarks_dict[key]) < 5:
+            latest_benchmarks_dict[key].append(benchmark)
+
+    # Calculate average performance for the latest 5 benchmarks
+    avg_benchmarks_dict = {}
+    for key, benchmarks in latest_benchmarks_dict.items():
+        avg_events_per_second = sum(b.events_per_second for b in benchmarks) / len(benchmarks)
+        avg_benchmarks_dict[key] = avg_events_per_second
+
     cpu_scores = {}
 
+    # Process each provider
+    for provider in providers:
+        single_thread_key = (provider.node_id, "CPU Single-thread Benchmark")
+        multi_thread_key = (provider.node_id, "CPU Multi-thread Benchmark")
 
+        single_thread_benchmarks = latest_benchmarks_dict.get(single_thread_key, [])
+        multi_thread_benchmarks = latest_benchmarks_dict.get(multi_thread_key, [])
 
-    # Query for each provider
-    for provider in Provider.objects.all():
-        # Get the latest 5 benchmarks for single and multi thread for each provider
-        latest_single_thread_benchmarks = CpuBenchmark.objects.filter(provider=provider, benchmark_name="CPU Single-thread Benchmark").order_by('-id')[:5]
-        latest_multi_thread_benchmarks = CpuBenchmark.objects.filter(provider=provider, benchmark_name="CPU Multi-thread Benchmark").order_by('-id')[:5]
+        single_thread_score_obj = single_thread_benchmarks[0] if single_thread_benchmarks else None
+        multi_thread_score_obj = multi_thread_benchmarks[0] if multi_thread_benchmarks else None
 
-        # Calculate average performance for the latest 5 benchmarks
-        avg_latest_single_thread_eps = latest_single_thread_benchmarks.aggregate(Avg('events_per_second'))['events_per_second__avg'] if latest_single_thread_benchmarks else 0
-        avg_latest_multi_thread_eps = latest_multi_thread_benchmarks.aggregate(Avg('events_per_second'))['events_per_second__avg'] if latest_multi_thread_benchmarks else 0
-
-        single_thread_score_obj = latest_single_thread_benchmarks.first()
-        multi_thread_score_obj = latest_multi_thread_benchmarks.first()
+        avg_latest_single_thread_eps = avg_benchmarks_dict.get(single_thread_key, 0)
+        avg_latest_multi_thread_eps = avg_benchmarks_dict.get(multi_thread_key, 0)
 
         # Calculate deviations based on the latest 5 benchmark averages
         single_thread_deviation = abs(single_thread_score_obj.events_per_second - avg_latest_single_thread_eps) / avg_latest_single_thread_eps * 100 if single_thread_score_obj and avg_latest_single_thread_eps else 0
