@@ -620,70 +620,66 @@ def get_provider_scores(request, node_id: str = Path(..., description="The node_
 
 
 
-SCHEMAS = {
-    "database": {
-        "minUptime": 99.9,
-        "minCpuMultiThreadScore": 2000,
-        "minMemorySeqRead": 500,
-        "minMemorySeqWrite": 500,
-        "minNetworkDownloadSpeed": 100,
-        "minSuccessRate": 99.0
+PRESETS = {
+    "service": {
+        "minUptime": 0.95
     },
-    "web_server": {
-        "minUptime": 99.0,
-        "minCpuSingleThreadScore": 1500,
-        "minNetworkDownloadSpeed": 50,
-        "minSuccessRate": 95.0
+    "network": {
+        "minNetworkDownloadSpeed": 80
     },
-    "compute_intensive": {
-        "minCpuMultiThreadScore": 3000,
-        "minCpuSingleThreadScore": 2000,
-        "minMemorySeqRead": 400,
-        "minMemorySeqWrite": 400,
-        "minSuccessRate": 98.0
+    "disk": {
+        "minRandomReadDiskThroughput": 45,
+        "minRandomWriteDiskThroughput": 30
     },
-    "storage_intensive": {
-        "minMemorySeqRead": 1000,
-        "minMemorySeqWrite": 1000,
-        "minRandomReadDiskThroughput": 200,
-        "minRandomWriteDiskThroughput": 200,
-        "minSuccessRate": 97.0
+    "memory": {
+        "minMemoryRandRead": 15000,
+        "minMemoryRandWrite": 2400
     },
-    "network_intensive": {
-        "minNetworkDownloadSpeed": 200,
-        "minNetworkUploadSpeed": 200,
-        "minSuccessRate": 96.0
+    "db": {
+        "minUptime": 0.95,
+        "minRandomReadDiskThroughput": 45,
+        "minRandomWriteDiskThroughput": 30
     },
-    "low_latency": {
-        "maxPing": 50,
-        "minSuccessRate": 99.0
+    "memory_db": {
+        "minUptime": 0.95,
+        "minMemoryRandRead": 15000,
+        "minMemoryRandWrite": 2400
     },
-    "high_availability": {
-        "minUptime": 99.99,
-        "minSuccessRate": 99.9
+    "compute": {
+        "minCpuSingleThreadScore": 1250
     },
-    "balanced": {
-        "minUptime": 98.0,
-        "minCpuMultiThreadScore": 1500,
-        "minMemorySeqRead": 300,
-        "minNetworkDownloadSpeed": 50,
-        "minSuccessRate": 90.0
+    "long_compute": {
+        "minUptime": 0.95,
+        "minCpuSingleThreadScore": 1250
     },
-    "test_environment": {
-        "minUptime": 90.0,
-        "minSuccessRate": 80.0
+    "parallel": {
+        "minCpuMultiThreadScore": 15000
+    },
+    "long_parallel": {
+        "minUptime": 0.95,
+        "minCpuMultiThreadScore": 15000
+    },
+    "rendering": {
+        "minNetworkDownloadSpeed": 80,
+        "minCpuMultiThreadScore": 15000
+    },
+    "cdn": {
+        "minUptime": 0.95,
+        "minNetworkDownloadSpeed": 80,
+        "minRandomReadDiskThroughput": 45,
+        "minRandomWriteDiskThroughput": 30
     }
 }
 
-class SchemaResponse(Schema):
+class PresetResponse(Schema):
     provider_ids: list[str]
 import requests
 @api.get(
-    "/providers/schema/{schema_name}",
+    "/providers/preset/{preset_name}",
     tags=["Reputation"],
-    summary="Retrieve providers based on predefined schema",
+    summary="Retrieve providers based on predefined preset",
     description="""
-    This endpoint retrieves a list of providers based on a predefined schema. Each schema specifies a set of filter parameters that are used to query the providers. The available schemas are:
+    This endpoint retrieves a list of providers based on a predefined preset. Each preset specifies a set of filter parameters that are used to query the providers. The available presets are:
 
     - **database**: High uptime, good network speeds, and other important metrics for database services.
     - **web_server**: High uptime, good single-thread CPU performance, and network speeds for web servers.
@@ -695,26 +691,26 @@ import requests
     - **balanced**: Balanced performance across various metrics.
     - **test_environment**: Lower requirements suitable for test environments.
     """,
-    response=SchemaResponse
+    response=PresetResponse
 )
-def filter_providers_by_schema(request, schema_name: str):
+def filter_providers_by_preset(request, preset_name: str):
     """
-    Retrieve providers based on a predefined schema.
+    Retrieve providers based on a predefined preset.
 
     Parameters:
-    - schema_name: The name of the schema to use for filtering providers.
+    - preset_name: The name of the preset to use for filtering providers.
 
     Returns:
-    - A list of provider IDs that match the specified schema.
+    - A list of provider IDs that match the specified preset.
     """
-    schema = SCHEMAS.get(schema_name)
-    if not schema:
-        return JsonResponse({"error": "Schema not found"}, status=404)
+    preset = PRESETS.get(preset_name)
+    if not preset:
+        return JsonResponse({"error": "Preset not found"}, status=404)
     
     # Proxy the request to filter_providers
     request = requests.get(
         f"http://django:8002/v2/filter",
-        params=schema
+        params=preset
     )
     return request.json()
 
