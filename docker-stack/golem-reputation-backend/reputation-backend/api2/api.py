@@ -681,13 +681,18 @@ import requests
     description="""
     This endpoint retrieves a list of providers based on a predefined preset. Each preset specifies a set of filter parameters that are used to query the providers. The available presets are:
 
-    - **database**: High uptime, good network speeds, and other important metrics for database services.
-    - **web_server**: High uptime, good single-thread CPU performance, and network speeds for web servers.
-    - **compute_intensive**: High multi-thread and single-thread CPU performance for compute-intensive tasks.
-    - **storage_intensive**: High sequential and random read/write performance for storage-intensive tasks.
-    - **network_intensive**: High network download and upload speeds for network-intensive tasks.
-    - **low_latency**: Low ping and high success rate for low-latency applications.
-    - **high_availability**: Very high uptime and success rate for high-availability services.
+    - **service**: High uptime, good network speeds, and other important metrics for service providers.
+    - **network**: High network download speed for network-related tasks.
+    - **disk**: High disk read/write performance for disk-intensive tasks.
+    - **memory**: High memory read/write performance for memory-intensive tasks.
+    - **db**: High uptime, good disk read/write performance for database services.
+    - **memory_db**: High uptime, good memory read/write performance for database services.
+    - **compute**: High single-thread CPU performance for compute-intensive tasks.
+    - **long_compute**: High uptime, high single-thread CPU performance for compute-intensive tasks.
+    - **parallel**: High multi-thread CPU performance for parallel tasks.
+    - **long_parallel**: High uptime, high multi-thread CPU performance for parallel tasks.
+    - **rendering**: High network download speed and multi-thread CPU performance for rendering tasks.
+    - **cdn**: High uptime, high network download speed, and good disk read/write performance for content delivery network services.
     - **balanced**: Balanced performance across various metrics.
     - **test_environment**: Lower requirements suitable for test environments.
     """,
