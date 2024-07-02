@@ -92,7 +92,7 @@ def list_provider_scores(request, network: str = Query('polygon', description="T
     tags=["Reputation"],
     summary="Retrieve a list of provider IDs filtered by various criteria",
     description="""
-    This endpoint retrieves a list of active provider IDs filtered according to various performance metrics and status indicators. Each filter is optional and can be specified with minimum and maximum values by the client. Providers are only included in the result if they are currently online and not blacklisted. The filters allow for detailed querying based on metrics such as uptime, CPU performance, memory and disk throughput, network speed, and task success rates.
+    This endpoint retrieves a list of online provider IDs filtered according to various performance metrics and status indicators. Each filter is optional and can be specified with minimum and maximum values by the client. Providers are only included in the result if they are currently online and not blacklisted. The filters allow for detailed querying based on metrics such as uptime, CPU performance, memory and disk throughput, network speed, and task success rates.
     """,
 )
 def filter_providers(

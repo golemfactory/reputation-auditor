@@ -141,8 +141,7 @@ def create_bulk_task_completion(request, data: List[TaskCompletionSchema]):
             task = Task.objects.filter(id=item.task_id).first()
 
             if not provider or not task:
-                errors.append(f"Provider or Task not found for item with node_id {
-                              item.node_id} and task_id {item.task_id}")
+                errors.append(f"Provider or Task not found for item with node_id {item.node_id} and task_id {item.task_id}")
                 continue
 
             task_completion_data.append(TaskCompletion(
@@ -154,8 +153,7 @@ def create_bulk_task_completion(request, data: List[TaskCompletionSchema]):
                 type=item.type,
             ))
         except Exception as e:
-            errors.append(f"Error processing item with node_id {
-                          item.node_id}: {str(e)}")
+            errors.append(f"Error processing item with node_id {item.node_id}: {str(e)}")
 
     TaskCompletion.objects.bulk_create(task_completion_data)
 
@@ -236,7 +234,7 @@ def start_task(request, payload: TaskCreateSchema):
     task = Task.objects.create(name=payload.name, started_at=timezone.now())
     return {"id": task.id, "name": task.name, "started_at": task.started_at}
 
-
+from stats.tasks import cache_provider_success_ratio
 @api.post("/task/end/{task_id}",  auth=AuthBearer(), include_in_schema=False,)
 def end_task(request, task_id: int, cost: float):
     try:
@@ -246,6 +244,8 @@ def end_task(request, task_id: int, cost: float):
     task.finished_at = timezone.now()
     task.cost = cost
     task.save()
+    cache_provider_success_ratio.delay()
+
     return {"id": task.id, "finished_at": task.finished_at}
 
 
@@ -276,8 +276,7 @@ def bulk_update_task_costs(request, payload: BulkTaskCostUpdateSchema):
 
             except TaskCompletion.DoesNotExist as e:
                 print(e)
-                print(f"TaskCompletion not found for task ID {
-                      update.task_id} and provider ID {update.provider_id}.")
+                print(f"TaskCompletion not found for task ID {update.task_id} and provider ID {update.provider_id}.")
                 continue  # Skip this update
 
         # Bulk update

@@ -1,6 +1,14 @@
+from django.db.models import Count, Q
+from django.utils import timezone
 import requests
 from core.celery import app
 from .models import DailyProviderStats
+from api.models import PingResult, NodeStatusHistory, Provider
+from api.scoring import calculate_uptime
+import redis
+import json
+
+redis_client = redis.Redis(host='redis', port=6379, db=0)
 
 
 @app.task
@@ -58,3 +66,68 @@ def populate_daily_provider_stats():
         total_provider_rejected=data['totalRejectedProvidersMainnet'],
         total_operator_rejected=len(rejected_operators)
     )
+
+
+@app.task
+def cache_provider_uptime():
+
+    # Get the latest online status for each provider
+    latest_online_providers = NodeStatusHistory.objects.filter(
+        is_online=True
+    ).order_by('provider', '-timestamp').distinct('provider')
+
+    provider_ids = [status.provider_id for status in latest_online_providers]
+
+    # Calculate uptime percentages
+    uptime_data = {
+        '100-80': 0,
+        '80-40': 0,
+        '40-0': 0
+    }
+
+    for provider_id in provider_ids:
+        uptime_percentage = calculate_uptime(provider_id)
+        if uptime_percentage >= 80:
+            uptime_data['100-80'] += 1
+        elif uptime_percentage >= 40:
+            uptime_data['80-40'] += 1
+        else:
+            uptime_data['40-0'] += 1
+
+    redis_client.set('stats_provider_uptime', json.dumps(uptime_data))
+
+
+@app.task
+def cache_provider_success_ratio():
+    # Get the latest online status for each provider
+    latest_online_providers = NodeStatusHistory.objects.filter(
+        is_online=True
+    ).order_by('provider', '-timestamp').distinct('provider')
+
+    provider_ids = [status.provider_id for status in latest_online_providers]
+
+    # Calculate success ratios
+    success_ratio_data = {
+        '100-80': 0,
+        '80-40': 0,
+        '40-0': 0
+    }
+
+    for provider_id in provider_ids:
+        provider = Provider.objects.filter(node_id=provider_id).annotate(
+            success_count=Count('taskcompletion', filter=Q(
+                taskcompletion__is_successful=True)),
+            total_count=Count('taskcompletion'),
+        ).first()
+
+        if provider and provider.total_count > 0:
+            success_ratio = provider.success_count / provider.total_count * 100
+            if success_ratio >= 80:
+                success_ratio_data['100-80'] += 1
+            elif success_ratio >= 40:
+                success_ratio_data['80-40'] += 1
+            else:
+                success_ratio_data['40-0'] += 1
+
+    redis_client.set('stats_provider_success_ratio',
+                     json.dumps(success_ratio_data))
