@@ -1,3 +1,5 @@
+import os  # To access environment variables
+import aiohttp  # For asynchronous HTTP requests
 import asyncio
 import json
 import subprocess
@@ -5,13 +7,13 @@ from .models import NodeStatusHistory, PingResult
 from asgiref.sync import sync_to_async
 
 
-
 async def async_fetch_node_ids():
     # Define the synchronous part as an inner function
     def get_node_ids():
         # Fetch the latest status for each provider and filter those that are online
         latest_statuses = NodeStatusHistory.objects.filter(
-            provider_id__in=NodeStatusHistory.objects.order_by('provider', '-timestamp').distinct('provider').values_list('provider_id', flat=True)
+            provider_id__in=NodeStatusHistory.objects.order_by(
+                'provider', '-timestamp').distinct('provider').values_list('provider_id', flat=True)
         ).order_by('provider', '-timestamp').distinct('provider')
 
         # Return provider IDs where the latest status is online
@@ -22,14 +24,11 @@ async def async_fetch_node_ids():
     return node_ids
 
 
-
-import aiohttp  # For asynchronous HTTP requests
-import os  # To access environment variables
-
 async def async_bulk_create_ping_results(chunk_data, p2p):
     endpoint = os.getenv('REPUTATION_PING_ENDPOINT')
     region = os.getenv('REGION')  # Ensure this is appropriately set
-    ping_secret = os.getenv('PING_SECRET')  # Fetching the ping secret from environment variables
+    # Fetching the ping secret from environment variables
+    ping_secret = os.getenv('PING_SECRET')
 
     if not endpoint or not region or not ping_secret:
         print("Endpoint, region, or ping secret is not configured.")
@@ -68,12 +67,7 @@ async def async_bulk_create_ping_results(chunk_data, p2p):
             print(f"An error occurred during POST request: {str(e)}")
 
 
-
-
-
-
 def parse_ping_time(ping_time_str):
-    
     """Converts a ping time string into milliseconds."""
     total_ms = ping_time_str
     parts = ping_time_str.split(' ')
@@ -100,13 +94,15 @@ async def ping_provider(provider_id):
 
             # Wait for the command to complete and capture the output
             stdout, stderr = await process.communicate()
-            
+
             if stdout:
                 result = json.loads(stdout.decode())
                 # Parse ping times into milliseconds
                 for ping_data in result:
-                    ping_data['ping (tcp)'] = parse_ping_time(ping_data['ping (tcp)'])
-                    ping_data['ping (udp)'] = parse_ping_time(ping_data['ping (udp)'])
+                    ping_data['ping (tcp)'] = parse_ping_time(
+                        ping_data['ping (tcp)'])
+                    ping_data['ping (udp)'] = parse_ping_time(
+                        ping_data['ping (udp)'])
                 results.append(result)
             else:
                 print("ERROR pinging", stderr.decode())
@@ -126,11 +122,10 @@ async def ping_provider(provider_id):
             return final_result
         else:
             return results[0] if results else False
-        
+
     except asyncio.TimeoutError as e:
         print("Timeout reached while checking node status", e)
         return False
-
 
 
 # Main logic to process each provider ID
@@ -140,7 +135,8 @@ async def ping_providers(p2p):
     all_chunk_data = []  # This will hold all accumulated PingResult instances
 
     for i in range(0, len(node_ids), chunk_size):
-        print(f"Processing chunk {(i // chunk_size) + 1} of {len(node_ids) // chunk_size + 1}")
+        print(f"Processing chunk {(i // chunk_size) +
+              1} of {len(node_ids) // chunk_size + 1}")
 
         chunk = node_ids[i:i+chunk_size]
         results = await asyncio.gather(*[ping_provider(id) for id in chunk], return_exceptions=True)
@@ -148,7 +144,8 @@ async def ping_providers(p2p):
         chunk_data = []  # This will hold the PingResult instances for the current chunk
         for result in results:
             if isinstance(result, Exception):
-                print(f"An error occurred: {result}")  # Optionally log the exception
+                # Optionally log the exception
+                print(f"An error occurred: {result}")
                 continue
             for ping_data in result:
                 chunk_data.append(PingResult(

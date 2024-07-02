@@ -4,10 +4,11 @@ from django.utils import timezone
 import os
 
 
-
 class Provider(models.Model):
-    node_id = models.CharField(max_length=255, unique=True, primary_key=True)  # Node ID
-    name = models.CharField(max_length=255, blank=True, null=True)  # Name of the provider
+    node_id = models.CharField(
+        max_length=255, unique=True, primary_key=True)  # Node ID
+    name = models.CharField(max_length=255, blank=True,
+                            null=True)  # Name of the provider
     cores = models.FloatField(blank=True, null=True)
     memory = models.FloatField(blank=True, null=True)
     cpu = models.CharField(max_length=255, blank=True, null=True)
@@ -15,22 +16,30 @@ class Provider(models.Model):
     runtime_version = models.CharField(max_length=50, blank=True, null=True)
     threads = models.IntegerField(blank=True, null=True)
     storage = models.FloatField(blank=True, null=True)
-    payment_addresses = models.JSONField(default=dict, blank=True, null=True)  # JSON object with payment addresses
-    network = models.CharField(max_length=50, default='mainnet')  # 'mainnet' or 'testnet'
+    # JSON object with payment addresses
+    payment_addresses = models.JSONField(default=dict, blank=True, null=True)
+    # 'mainnet' or 'testnet'
+    network = models.CharField(max_length=50, default='mainnet')
     created_at = models.DateTimeField(auto_now_add=True, null=True)
+
     class Meta:
         indexes = [
             models.Index(fields=['network']),
             models.Index(fields=['created_at']),
         ]
 
+
 class Offer(models.Model):
-    provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  # Link to a Provider
-    task = models.ForeignKey('Task', on_delete=models.CASCADE)  # Link to a Task
+    provider = models.ForeignKey(
+        'Provider', on_delete=models.CASCADE)  # Link to a Provider
+    task = models.ForeignKey(
+        'Task', on_delete=models.CASCADE)  # Link to a Task
     offer = models.JSONField(default=dict)  # JSON object with offer data
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     accepted = models.BooleanField(default=False)
-    reason = models.CharField(max_length=255, blank=True, null=True)  # Reason for rejection
+    reason = models.CharField(
+        max_length=255, blank=True, null=True)  # Reason for rejection
+
     class Meta:
         indexes = [
             models.Index(fields=['provider']),
@@ -38,28 +47,36 @@ class Offer(models.Model):
             models.Index(fields=['created_at']),
         ]
 
+
 class BlacklistedOperator(models.Model):
     wallet = models.CharField(max_length=255, unique=True)  # Payment address
     created_at = models.DateTimeField(auto_now_add=True, null=True)
-    reason = models.CharField(max_length=255, blank=True, null=True)  # Reason for blacklisting
+    # Reason for blacklisting
+    reason = models.CharField(max_length=255, blank=True, null=True)
+
     class Meta:
         indexes = [
             models.Index(fields=['wallet']),
             models.Index(fields=['created_at']),
         ]
 
+
 class BlacklistedProvider(models.Model):
-    provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  # Link to a Provider
+    provider = models.ForeignKey(
+        'Provider', on_delete=models.CASCADE)  # Link to a Provider
     created_at = models.DateTimeField(auto_now_add=True, null=True)
-    reason = models.CharField(max_length=255, blank=True, null=True)  # Reason for blacklisting
+    # Reason for blacklisting
+    reason = models.CharField(max_length=255, blank=True, null=True)
+
     class Meta:
         indexes = [
             models.Index(fields=['provider']),
             models.Index(fields=['created_at']),
         ]
 
+
 class DiskBenchmark(models.Model):
-    provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  
+    provider = models.ForeignKey('Provider', on_delete=models.CASCADE)
     benchmark_name = models.CharField(max_length=255)  # Name of the benchmark
 
     reads_per_second = models.FloatField()
@@ -77,6 +94,7 @@ class DiskBenchmark(models.Model):
     latency_95th_percentile_ms = models.FloatField()
     disk_size_gb = models.FloatField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True)
+
     class Meta:
         indexes = [
             models.Index(fields=['provider']),
@@ -91,8 +109,9 @@ class DiskBenchmark(models.Model):
             models.Index(fields=['provider', 'benchmark_name', 'created_at']),
         ]
 
+
 class MemoryBenchmark(models.Model):
-    provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  
+    provider = models.ForeignKey('Provider', on_delete=models.CASCADE)
     benchmark_name = models.CharField(max_length=255)  # Name of the benchmark
 
     total_operations = models.IntegerField()
@@ -113,6 +132,7 @@ class MemoryBenchmark(models.Model):
     execution_time_sec = models.FloatField()
     memory_size_gb = models.FloatField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, null=True)
+
     class Meta:
         indexes = [
             models.Index(fields=['provider']),
@@ -126,7 +146,7 @@ class MemoryBenchmark(models.Model):
 
 
 class CpuBenchmark(models.Model):
-    provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  
+    provider = models.ForeignKey('Provider', on_delete=models.CASCADE)
     benchmark_name = models.CharField(max_length=255)  # Name of the benchmark
 
     threads = models.IntegerField()
@@ -140,6 +160,7 @@ class CpuBenchmark(models.Model):
     latency_95th_percentile_ms = models.FloatField()
     sum_latency_ms = models.FloatField()
     created_at = models.DateTimeField(auto_now_add=True, null=True)
+
     class Meta:
         indexes = [
             models.Index(fields=['provider']),
@@ -148,8 +169,10 @@ class CpuBenchmark(models.Model):
             models.Index(fields=['events_per_second']),
             models.Index(fields=['provider', 'created_at']),
             models.Index(fields=['benchmark_name', 'created_at']),
-            models.Index(fields=['benchmark_name', 'provider_id']),  # Composite index
+            # Composite index
+            models.Index(fields=['benchmark_name', 'provider_id']),
         ]
+
 
 class GPUTask(models.Model):
     provider = models.ForeignKey('Provider', on_delete=models.CASCADE)
@@ -157,52 +180,71 @@ class GPUTask(models.Model):
     pcie = models.IntegerField()  # PCIe slot number
     memory_total = models.IntegerField()  # Total memory in MB
     memory_free = models.IntegerField()  # Free memory in MB
-    cuda_cap = models.DecimalField(max_digits=4, decimal_places=2)  # CUDA capability version
-    gpu_burn_gflops = models.IntegerField(null=True, blank=True)  # GFLOPS for GPU burn
+    cuda_cap = models.DecimalField(
+        max_digits=4, decimal_places=2)  # CUDA capability version
+    gpu_burn_gflops = models.IntegerField(
+        null=True, blank=True)  # GFLOPS for GPU burn
     created_at = models.DateTimeField(auto_now_add=True, null=True)
 
+
 class NetworkBenchmark(models.Model):
-    provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  
+    provider = models.ForeignKey('Provider', on_delete=models.CASCADE)
     mbit_per_second = models.FloatField()
     created_at = models.DateTimeField(auto_now_add=True, null=True)
 
+
 class Task(models.Model):
-    name= models.CharField(max_length=255)  # Name of the task
-    started_at = models.DateTimeField(default=timezone.now)  # When the task was started
+    name = models.CharField(max_length=255)  # Name of the task
+    started_at = models.DateTimeField(
+        default=timezone.now)  # When the task was started
     finished_at = models.DateTimeField(null=True)  # When the task was finished
     cost = models.FloatField(null=True)  # Cost of the task in GLM
+
     class Meta:
         indexes = [
             models.Index(fields=['started_at']),
             models.Index(fields=['finished_at']),
         ]
 
+
 class TaskCompletion(models.Model):
-    provider = models.ForeignKey('Provider', on_delete=models.CASCADE)  # Link to a Node model
-    task_name = models.CharField(max_length=255)  # A descriptive name or identifier for the task
-    is_successful = models.BooleanField(default=False)  # Whether the task was completed successfully
-    error_message = models.TextField(null=True)  # Error message if the task failed
-    timestamp = models.DateTimeField(auto_now_add=True)  # When the record was created
-    task= models.ForeignKey('Task', on_delete=models.CASCADE, null=True)  # Link to a Task model
+    provider = models.ForeignKey(
+        'Provider', on_delete=models.CASCADE)  # Link to a Node model
+    # A descriptive name or identifier for the task
+    task_name = models.CharField(max_length=255)
+    # Whether the task was completed successfully
+    is_successful = models.BooleanField(default=False)
+    # Error message if the task failed
+    error_message = models.TextField(null=True)
+    timestamp = models.DateTimeField(
+        auto_now_add=True)  # When the record was created
+    # Link to a Task model
+    task = models.ForeignKey('Task', on_delete=models.CASCADE, null=True)
     cost = models.FloatField(null=True)  # Cost of the task in GLM
     # type , default CPU but GPU also possible
-    type = models.CharField(max_length=255, default='CPU')  # Type of the task, e.g., 'CPU' or 'GPU'
+    # Type of the task, e.g., 'CPU' or 'GPU'
+    type = models.CharField(max_length=255, default='CPU')
+
     class Meta:
         indexes = [
             models.Index(fields=['provider', 'timestamp']),
             models.Index(fields=['task']),
-            models.Index(fields=['provider', 'is_successful'], name='idx_provider_success', condition=models.Q(is_successful=True)),
+            models.Index(fields=['provider', 'is_successful'],
+                         name='idx_provider_success', condition=models.Q(is_successful=True)),
             models.Index(fields=['type']),
         ]
 
+
 class PingResult(models.Model):
-    provider = models.ForeignKey(Provider, on_delete=models.CASCADE)  # Link to a Provider
+    provider = models.ForeignKey(
+        Provider, on_delete=models.CASCADE)  # Link to a Provider
     is_p2p = models.BooleanField(default=False)  # Whether it's peer-to-peer
     ping_tcp = models.IntegerField()  # Ping result for TCP, e.g., 96
     ping_udp = models.IntegerField()  # Ping result for UDP, e.g., 96
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     region = models.CharField(max_length=255, default='local')
-    from_non_p2p_pinger = models.BooleanField(default=False)  # Whether the ping was from a non-P2P node. If it was and is_p2p is True, it's a P2P ping and we can assume the provider has opened the port.
+    # Whether the ping was from a non-P2P node. If it was and is_p2p is True, it's a P2P ping and we can assume the provider has opened the port.
+    from_non_p2p_pinger = models.BooleanField(default=False)
 
     class Meta:
         indexes = [
@@ -211,13 +253,13 @@ class PingResult(models.Model):
             models.Index(fields=['is_p2p']),
             models.Index(fields=['from_non_p2p_pinger']),
             models.Index(fields=['region']),
-            models.Index(fields=['provider', 'is_p2p', 'region']),  # Composite index
-            models.Index(fields=['provider', 'from_non_p2p_pinger']),  # New composite index
-            models.Index(fields=['provider', 'region', 'created_at']),  # Suggested composite index for optimization
+            # Composite index
+            models.Index(fields=['provider', 'is_p2p', 'region']),
+            # New composite index
+            models.Index(fields=['provider', 'from_non_p2p_pinger']),
+            # Suggested composite index for optimization
+            models.Index(fields=['provider', 'region', 'created_at']),
         ]
-
-
-
 
 
 class NodeStatusHistory(models.Model):

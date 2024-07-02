@@ -6,4 +6,4 @@ app_name = 'api'
 
 urlpatterns = [
     path("", api.urls),
-    ]
+]

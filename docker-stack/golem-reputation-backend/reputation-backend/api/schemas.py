@@ -3,11 +3,12 @@ from typing import Optional, List
 
 from datetime import datetime
 
+
 class ProviderSuccessRate(Schema):
     node_id: str
     name: Optional[str]
-    runtime_version: Optional[str]  
-    wallet_address: Optional[dict]   
+    runtime_version: Optional[str]
+    wallet_address: Optional[dict]
     success_rate: float
 
 
@@ -15,6 +16,7 @@ class ProposalSchema(Schema):
     offer = dict
     task_id: int
     node_id: str
+
 
 class DiskBenchmarkSchema(Schema):
     node_id: str
@@ -46,7 +48,6 @@ class CpuBenchmarkSchema(Schema):
     sum_latency_ms: str
 
 
-
 class MemoryBenchmarkSchema(Schema):
     node_id: str
     benchmark_name: str
@@ -65,7 +66,6 @@ class MemoryBenchmarkSchema(Schema):
     execution_time_sec: str
 
 
-
 class TaskCompletionSchema(Schema):
     node_id: str
     task_name: str
@@ -80,18 +80,23 @@ class TaskCostUpdateSchema(Schema):
     cost: float
     task_id: int
 
+
 class TaskCreateSchema(Schema):
     name: str
+
 
 class TaskUpdateSchema(Schema):
     finished_at: Optional[datetime] = None
 
+
 class BulkTaskCostUpdateSchema(Schema):
     updates: List[TaskCostUpdateSchema]
+
 
 class BenchmarkDataSchema(Schema):
     type: str  # 'disk', 'cpu', or 'memory'
     data: dict  # Will contain data corresponding to the specific benchmark type
+
 
 class BulkBenchmarkSchema(Schema):
     benchmarks: List[BenchmarkDataSchema]

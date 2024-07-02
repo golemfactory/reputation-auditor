@@ -1,16 +1,12 @@
+from api.models import GPUTask
+from api.models import BlacklistedProvider, BlacklistedOperator
+from django.db.models import Count, Q
 from collections import defaultdict
 from django.http import JsonResponse
-from django.db.models import FloatField
 from django.db.models import Value as V
-from django.db.models.functions import Cast
-from django.db.models import Case, When, Value, CharField
-from django.db.models import Avg, StdDev
-from ninja import NinjaAPI, Path
+from ninja import NinjaAPI
 from api.models import Provider, TaskCompletion, MemoryBenchmark, DiskBenchmark, CpuBenchmark, NetworkBenchmark, Offer
-from .schemas import OfferHistorySchema, TaskParticipationSchema, ProviderDetailsResponseSchema
-from typing import List
-from django.utils import timezone
-from api.scoring import penalty_weight
+from .schemas import TaskParticipationSchema, ProviderDetailsResponseSchema
 
 
 api = NinjaAPI(
@@ -29,18 +25,22 @@ def get_summary(deviation):
         return "varying"
     return "unstable"
 
+
 def calculate_deviation(scores, normalization_factors=None):
     if not scores or len(scores) < 2:
         print("Not enough scores to calculate deviation")
         return 0
     if normalization_factors:
-        scores = [score / factor for score, factor in zip(scores, normalization_factors)]
-    
+        scores = [score / factor for score,
+                  factor in zip(scores, normalization_factors)]
+
     # Calculate relative changes
-    relative_changes = [(scores[i] - scores[i - 1]) / scores[i - 1] for i in range(1, len(scores))]
-    
+    relative_changes = [(scores[i] - scores[i - 1]) / scores[i - 1]
+                        for i in range(1, len(scores))]
+
     avg_change = sum(relative_changes) / len(relative_changes)
-    deviation_percent = (sum((change - avg_change) ** 2 for change in relative_changes) ** 0.5 / len(relative_changes) ** 0.5) * 100
+    deviation_percent = (sum((change - avg_change) ** 2 for change in relative_changes)
+                         ** 0.5 / len(relative_changes) ** 0.5) * 100
     return deviation_percent
 
 
@@ -49,16 +49,18 @@ def get_benchmark(request, node_id: str):
     provider = Provider.objects.filter(node_id=node_id).first()
     if not provider:
         return JsonResponse({"detail": "Provider not found"}, status=404)
-    
+
     benchmarks = CpuBenchmark.objects.filter(provider=provider).values(
         'benchmark_name', 'events_per_second', 'threads', 'created_at'
     )
-    result = {"data": {"single": [], "multi": []}, "singleDeviation": 0, "multiDeviation": 0, "summary": ""}
+    result = {"data": {"single": [], "multi": []},
+              "singleDeviation": 0, "multiDeviation": 0, "summary": ""}
     single_scores, multi_scores = [], []
     single_factors, multi_factors = [], []
 
     for benchmark in benchmarks:
-        score_entry = {"score": benchmark['events_per_second'], "timestamp": benchmark['created_at'].timestamp()}
+        score_entry = {"score": benchmark['events_per_second'],
+                       "timestamp": benchmark['created_at'].timestamp()}
         if "Single-thread" in benchmark['benchmark_name']:
             result["data"]["single"].append(score_entry)
             single_scores.append(benchmark['events_per_second'])
@@ -68,7 +70,8 @@ def get_benchmark(request, node_id: str):
             multi_scores.append(benchmark['events_per_second'])
             multi_factors.append(benchmark['threads'])
 
-    result['singleDeviation'] = calculate_deviation(single_scores, single_factors)
+    result['singleDeviation'] = calculate_deviation(
+        single_scores, single_factors)
     result['multiDeviation'] = calculate_deviation(multi_scores, multi_factors)
 
     result['summary'] = {
@@ -332,10 +335,11 @@ def get_provider_details(request, node_id: str):
         task_participations, key=lambda x: x.task_id)
 
     # Calculate overall task success rate
-    successful_tasks = TaskCompletion.objects.filter(provider=provider, is_successful=True).count()
+    successful_tasks = TaskCompletion.objects.filter(
+        provider=provider, is_successful=True).count()
     total_tasks = TaskCompletion.objects.filter(provider=provider).count()
-    success_rate = (successful_tasks / total_tasks * 100) if total_tasks > 0 else None
-    
+    success_rate = (successful_tasks / total_tasks *
+                    100) if total_tasks > 0 else None
 
     return ProviderDetailsResponseSchema(
         offer_history=[],  # Populate as needed
@@ -344,31 +348,32 @@ def get_provider_details(request, node_id: str):
     )
 
 
-
-from django.db.models import Count, Q, F, Max
-from api.models import NodeStatusHistory, BlacklistedProvider, BlacklistedOperator
-
 @api.get("/providers/online")
 def online_provider_summary(request):
 
     # Get the success rate for each provider
     providers = Provider.objects.annotate(
-        success_count=Count('taskcompletion', filter=Q(taskcompletion__is_successful=True)),
+        success_count=Count('taskcompletion', filter=Q(
+            taskcompletion__is_successful=True)),
         total_count=Count('taskcompletion')
     ).all()
 
     # Get the blacklist status for each provider
-    blacklisted_providers = set(BlacklistedProvider.objects.values_list('provider__node_id', flat=True))
-    blacklisted_wallets = set(BlacklistedOperator.objects.values_list('wallet', flat=True))
+    blacklisted_providers = set(
+        BlacklistedProvider.objects.values_list('provider__node_id', flat=True))
+    blacklisted_wallets = set(
+        BlacklistedOperator.objects.values_list('wallet', flat=True))
 
     result = []
     for provider in providers:
-        success_rate = (provider.success_count / provider.total_count * 100) if provider.total_count > 0 else None
+        success_rate = (provider.success_count / provider.total_count *
+                        100) if provider.total_count > 0 else None
         is_blacklisted_provider = provider.node_id in blacklisted_providers
 
         # Determine the correct payment address key based on network
         payment_address_key = 'golem.com.payment.platform.erc20-mainnet-glm.address' if provider.network == 'mainnet' else 'golem.com.payment.platform.erc20-holesky-tglm.address'
-        is_blacklisted_wallet = provider.payment_addresses.get(payment_address_key) in blacklisted_wallets
+        is_blacklisted_wallet = provider.payment_addresses.get(
+            payment_address_key) in blacklisted_wallets
 
         result.append({
             "node_id": provider.node_id,
@@ -378,7 +383,8 @@ def online_provider_summary(request):
         })
 
     return JsonResponse(result, safe=False)
-from api.models import GPUTask
+
+
 @api.get("/benchmark/gpu/{node_id}")
 def get_gpu_benchmark(request, node_id: str):
     provider = Provider.objects.filter(node_id=node_id).first()
