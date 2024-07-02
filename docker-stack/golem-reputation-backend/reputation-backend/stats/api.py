@@ -7,8 +7,9 @@ from django.db.models import Value as V
 from ninja import NinjaAPI
 from api.models import Provider, TaskCompletion, MemoryBenchmark, DiskBenchmark, CpuBenchmark, NetworkBenchmark, Offer
 from .schemas import TaskParticipationSchema, ProviderDetailsResponseSchema
-
-
+import redis
+import json
+redis_client = redis.Redis(host='redis', port=6379, db=0)
 api = NinjaAPI(
     title="Golem Reputation Stats API",
     version="1.0.0",
@@ -404,3 +405,33 @@ def get_gpu_benchmark(request, node_id: str):
     }
 
     return JsonResponse(result)
+
+
+@api.get("/network/uptime", tags=["Stats"])
+def get_cached_uptime(request):
+    """
+    Retrieve cached provider uptime statistics from Redis.
+
+    Returns:
+        JsonResponse: A JSON response containing the uptime statistics.
+    """
+    uptime_data = redis_client.get('stats_provider_uptime')
+    if uptime_data:
+        return JsonResponse(json.loads(uptime_data))
+    else:
+        return JsonResponse({"error": "Uptime data not available"}, status=503)
+
+
+@api.get("/network/success-rate", tags=["Stats"])
+def get_cached_success_rate(request):
+    """
+    Retrieve cached provider success rate statistics from Redis.
+
+    Returns:
+        JsonResponse: A JSON response containing the success rate statistics.
+    """
+    success_rate_data = redis_client.get('stats_provider_success_ratio')
+    if success_rate_data:
+        return JsonResponse(json.loads(success_rate_data))
+    else:
+        return JsonResponse({"error": "Success rate data not available"}, status=503)
