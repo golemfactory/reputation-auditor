@@ -94,8 +94,7 @@ def update_nodes_data(node_props):
     for props in node_props:
         issuer_id = props['node_id']
         is_online_now = check_node_status(issuer_id)
-        print(f"Updating NodeStatus for {
-              issuer_id} with is_online_now={is_online_now}")
+        print(f"Updating NodeStatus for {issuer_id} with is_online_now={is_online_now}")
         try:
             update_nodes_status(issuer_id, is_online_now)
             r.set(f"provider:{issuer_id}:status", str(is_online_now))
@@ -112,8 +111,7 @@ def update_nodes_data(node_props):
 
     for issuer_id in provider_ids_not_in_scan:
         is_online_now = check_node_status(issuer_id)
-        print(f"Verifying NodeStatus for {
-              issuer_id} with is_online_now={is_online_now}")
+        print(f"Verifying NodeStatus for {issuer_id} with is_online_now={is_online_now}")
         try:
             update_nodes_status(issuer_id, is_online_now)
             r.set(f"provider:{issuer_id}:status", str(is_online_now))

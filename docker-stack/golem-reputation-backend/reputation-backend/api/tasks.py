@@ -385,8 +385,10 @@ def get_blacklisted_providers():
 
         if now < next_eligible_date:
             blacklisted_providers.append(provider.node_id)
-            BlacklistedProvider.objects.create(provider=provider, reason=f"Consecutive failures: {
-                                               consecutive_failures}. Next eligible date: {next_eligible_date}")
+            BlacklistedProvider.objects.create(
+                provider=provider,
+                reason=f"Consecutive failures: {consecutive_failures}. Next eligible date: {next_eligible_date}"
+            )
 
     return blacklisted_providers
 

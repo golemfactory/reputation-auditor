@@ -135,8 +135,7 @@ async def ping_providers(p2p):
     all_chunk_data = []  # This will hold all accumulated PingResult instances
 
     for i in range(0, len(node_ids), chunk_size):
-        print(f"Processing chunk {(i // chunk_size) +
-              1} of {len(node_ids) // chunk_size + 1}")
+        print(f"Processing chunk {(i // chunk_size) + 1} of {len(node_ids) // chunk_size + 1}")
 
         chunk = node_ids[i:i+chunk_size]
         results = await asyncio.gather(*[ping_provider(id) for id in chunk], return_exceptions=True)
