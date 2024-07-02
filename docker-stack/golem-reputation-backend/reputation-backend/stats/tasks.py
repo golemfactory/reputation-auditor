@@ -1,3 +1,4 @@
+from django.db.models import Subquery, OuterRef
 from django.db.models import Count, Q
 from django.utils import timezone
 import requests
@@ -72,11 +73,16 @@ def populate_daily_provider_stats():
 def cache_provider_uptime():
 
     # Get the latest online status for each provider
-    latest_online_providers = NodeStatusHistory.objects.filter(
-        is_online=True
-    ).order_by('provider', '-timestamp').distinct('provider')
+    latest_statuses = NodeStatusHistory.objects.filter(
+        timestamp=Subquery(
+            NodeStatusHistory.objects.filter(provider=OuterRef('provider'))
+            .order_by('-timestamp')
+            .values('timestamp')[:1]
+        )
+    )
 
-    provider_ids = [status.provider_id for status in latest_online_providers]
+    provider_ids = [
+        status.provider_id for status in latest_statuses if status.is_online]
 
     # Calculate uptime percentages
     uptime_data = {
@@ -100,11 +106,16 @@ def cache_provider_uptime():
 @app.task
 def cache_provider_success_ratio():
     # Get the latest online status for each provider
-    latest_online_providers = NodeStatusHistory.objects.filter(
-        is_online=True
-    ).order_by('provider', '-timestamp').distinct('provider')
+    latest_statuses = NodeStatusHistory.objects.filter(
+        timestamp=Subquery(
+            NodeStatusHistory.objects.filter(provider=OuterRef('provider'))
+            .order_by('-timestamp')
+            .values('timestamp')[:1]
+        )
+    )
 
-    provider_ids = [status.provider_id for status in latest_online_providers]
+    provider_ids = [
+        status.provider_id for status in latest_statuses if status.is_online]
 
     # Calculate success ratios
     success_ratio_data = {
