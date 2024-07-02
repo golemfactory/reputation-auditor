@@ -435,3 +435,39 @@ def get_cached_success_rate(request):
         return JsonResponse(json.loads(success_rate_data))
     else:
         return JsonResponse({"error": "Success rate data not available"}, status=503)
+
+
+from api.models import PingResult
+@api.get("/ping/average/{node_id}")
+def get_average_ping(request, node_id: str):
+    provider = Provider.objects.filter(node_id=node_id).first()
+    if not provider:
+        return JsonResponse({"detail": "Provider not found"}, status=404)
+
+    regions = ['europe', 'asia', 'us']
+    p2p_averages = {}
+    relay_averages = {}
+
+    for region in regions:
+        p2p_pings = PingResult.objects.filter(
+            provider=provider, is_p2p=True, region=region
+        ).order_by('-created_at')[:3]
+
+        relay_pings = PingResult.objects.filter(
+            provider=provider, is_p2p=False, region=region
+        ).order_by('-created_at')[:3]
+
+        p2p_avg_tcp = sum(ping.ping_tcp for ping in p2p_pings) / len(p2p_pings) if p2p_pings else None
+        p2p_avg_udp = sum(ping.ping_udp for ping in p2p_pings) / len(p2p_pings) if p2p_pings else None
+        relay_avg_tcp = sum(ping.ping_tcp for ping in relay_pings) / len(relay_pings) if relay_pings else None
+        relay_avg_udp = sum(ping.ping_udp for ping in relay_pings) / len(relay_pings) if relay_pings else None
+
+        p2p_averages[region] = {"tcp": p2p_avg_tcp, "udp": p2p_avg_udp}
+        relay_averages[region] = {"tcp": relay_avg_tcp, "udp": relay_avg_udp}
+
+    result = {
+        "p2p": p2p_averages,
+        "relay": relay_averages
+    }
+
+    return JsonResponse(result)
