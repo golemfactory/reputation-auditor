@@ -19,6 +19,7 @@ from core.celery import app
 from django.db.models import Q
 from django.db.models import Case, When, Value, F
 from django.db import transaction
+r = redis.Redis(host='redis', port=6379, db=0)
 
 
 @app.task(queue='default', options={'queue': 'default', 'routing_key': 'default'})
@@ -78,13 +79,30 @@ from .utils import build_parser, print_env_info, format_usage  # noqa: E402
 def update_nodes_status(provider_id, is_online_now):
     provider, created = Provider.objects.get_or_create(node_id=provider_id)
 
-    # Check the last status in the NodeStatusHistory
-    last_status = NodeStatusHistory.objects.filter(provider=provider).last()
+    # Get the latest status from Redis
+    latest_status = r.get(f"provider:{provider_id}:status")
 
-    if not last_status or last_status.is_online != is_online_now:
-        # Create a new status entry if there's a change in status
-        NodeStatusHistory.objects.create(
-            provider=provider, is_online=is_online_now)
+    if latest_status is None:
+        # Status not found in Redis, fetch the latest status from the database
+        last_status = NodeStatusHistory.objects.filter(
+            provider=provider).last()
+        if not last_status or last_status.is_online != is_online_now:
+            # Create a new status entry if there's a change in status
+            NodeStatusHistory.objects.create(
+                provider=provider, is_online=is_online_now)
+            provider.online = is_online_now
+            provider.save()
+    else:
+        # Compare the latest status from Redis with the current status
+        if latest_status.decode() != str(is_online_now):
+            # Status has changed, update the database and Node.online field
+            NodeStatusHistory.objects.create(
+                provider=provider, is_online=is_online_now)
+            provider.online = is_online_now
+            provider.save()
+
+    # Store the current status in Redis for future lookups
+    r.set(f"provider:{provider_id}:status", str(is_online_now))
 
 
 @app.task(queue='uptime', options={'queue': 'uptime', 'routing_key': 'uptime'})
@@ -97,7 +115,6 @@ def update_nodes_data(node_props):
         print(f"Updating NodeStatus for {issuer_id} with is_online_now={is_online_now}")
         try:
             update_nodes_status(issuer_id, is_online_now)
-            r.set(f"provider:{issuer_id}:status", str(is_online_now))
         except Exception as e:
             print(f"Error updating NodeStatus for {issuer_id}: {e}")
 
@@ -114,7 +131,6 @@ def update_nodes_data(node_props):
         print(f"Verifying NodeStatus for {issuer_id} with is_online_now={is_online_now}")
         try:
             update_nodes_status(issuer_id, is_online_now)
-            r.set(f"provider:{issuer_id}:status", str(is_online_now))
         except Exception as e:
             print(f"Error verifying/updating NodeStatus for {issuer_id}: {e}")
 
