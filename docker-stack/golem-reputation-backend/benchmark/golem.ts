@@ -437,7 +437,7 @@ export class Golem {
             if (this.usedProviders.has(proposal.provider.id)) {
                 accepted = false
                 reason = "Provider already benchmarked.";
-                let skipSubmit = false;
+                skipSubmit = true;
             } else if (this.isFromDisallowedOperator(proposal)) {
                 accepted = false
                 reason = "Provider's wallet address is blacklisted."
@@ -456,7 +456,7 @@ export class Golem {
             }
 
             // Send offer with the decision and reason
-            if (!skipSubmit) {
+            if (skipSubmit) {
                 await sendOfferFromProvider(proposal.properties, proposal.provider.id, this.config.taskId, accepted, reason, this.logger);
             }
 
