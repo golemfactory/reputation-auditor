@@ -497,8 +497,7 @@ def get_network_average_latency(request):
                 p2p_avg = PingResult.objects.filter(
                     is_p2p=True,
                     region=target_region,
-                    created_at__gte=three_hours_ago,
-                    provider__node_id__startswith=source_region  # Assuming node_id starts with region name
+                    created_at__gte=three_hours_ago
                 ).aggregate(
                     avg_tcp=Avg('ping_tcp'),
                     avg_udp=Avg('ping_udp')
@@ -507,8 +506,7 @@ def get_network_average_latency(request):
                 relay_avg = PingResult.objects.filter(
                     is_p2p=False,
                     region=target_region,
-                    created_at__gte=three_hours_ago,
-                    provider__node_id__startswith=source_region  # Assuming node_id starts with region name
+                    created_at__gte=three_hours_ago
                 ).aggregate(
                     avg_tcp=Avg('ping_tcp'),
                     avg_udp=Avg('ping_udp')
