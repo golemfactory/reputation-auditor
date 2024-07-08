@@ -471,3 +471,56 @@ def get_average_ping(request, node_id: str):
     }
 
     return JsonResponse(result)
+
+
+from django.db.models import Avg
+from django.utils import timezone
+from datetime import timedelta
+
+@api.get("/network/average-latency")
+def get_network_average_latency(request):
+    regions = ['europe', 'asia', 'us']
+    result = {
+        "p2p": {},
+        "relay": {}
+    }
+
+    # Calculate the timestamp for 3 hours ago
+    three_hours_ago = timezone.now() - timedelta(hours=3)
+
+    for source_region in regions:
+        result["p2p"][source_region] = {}
+        result["relay"][source_region] = {}
+
+        for target_region in regions:
+            if source_region != target_region:
+                p2p_avg = PingResult.objects.filter(
+                    is_p2p=True,
+                    region=target_region,
+                    created_at__gte=three_hours_ago,
+                    provider__node_id__startswith=source_region  # Assuming node_id starts with region name
+                ).aggregate(
+                    avg_tcp=Avg('ping_tcp'),
+                    avg_udp=Avg('ping_udp')
+                )
+
+                relay_avg = PingResult.objects.filter(
+                    is_p2p=False,
+                    region=target_region,
+                    created_at__gte=three_hours_ago,
+                    provider__node_id__startswith=source_region  # Assuming node_id starts with region name
+                ).aggregate(
+                    avg_tcp=Avg('ping_tcp'),
+                    avg_udp=Avg('ping_udp')
+                )
+
+                result["p2p"][source_region][target_region] = {
+                    "tcp": p2p_avg['avg_tcp'],
+                    "udp": p2p_avg['avg_udp']
+                }
+                result["relay"][source_region][target_region] = {
+                    "tcp": relay_avg['avg_tcp'],
+                    "udp": relay_avg['avg_udp']
+                }
+
+    return JsonResponse(result)
