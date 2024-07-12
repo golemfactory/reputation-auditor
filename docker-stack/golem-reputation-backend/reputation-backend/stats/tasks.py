@@ -1,4 +1,3 @@
-from django.db.models import Subquery, OuterRef
 from django.db.models import Count, Q
 from django.utils import timezone
 import requests
@@ -81,8 +80,8 @@ def cache_provider_uptime():
         )
     )
 
-    provider_ids = [
-        status.provider_id for status in latest_statuses if status.is_online]
+    provider_ids = [status.provider_id for status in latest_statuses if status.is_online]
+
 
     # Calculate uptime percentages
     uptime_data = {
@@ -91,18 +90,27 @@ def cache_provider_uptime():
         '40-0': 0
     }
 
+    uptime_data = {
+        '100-99': 0,
+        '99-98': 0,
+    }
+    uptime_data.update({f'{i}-{i-10}': 0 for i in range(90, 0, -10)})
+    
     for provider_id in provider_ids:
         uptime_percentage = calculate_uptime(provider_id)
-        if uptime_percentage >= 80:
-            uptime_data['100-80'] += 1
-        elif uptime_percentage >= 40:
-            uptime_data['80-40'] += 1
+        if uptime_percentage >= 99:
+            uptime_data['100-99'] += 1
+        elif uptime_percentage >= 98:
+            uptime_data['99-98'] += 1
         else:
-            uptime_data['40-0'] += 1
+            for i in range(90, 0, -10):
+                if uptime_percentage >= i - 10:
+                    uptime_data[f'{i}-{i-10}'] += 1
+                    break
 
     redis_client.set('stats_provider_uptime', json.dumps(uptime_data))
 
-
+from django.db.models import Subquery, OuterRef
 @app.task
 def cache_provider_success_ratio():
     # Get the latest online status for each provider
@@ -114,8 +122,8 @@ def cache_provider_success_ratio():
         )
     )
 
-    provider_ids = [
-        status.provider_id for status in latest_statuses if status.is_online]
+    provider_ids = [status.provider_id for status in latest_statuses if status.is_online]
+
 
     # Calculate success ratios
     success_ratio_data = {
