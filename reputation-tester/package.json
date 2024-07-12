@@ -1,0 +1,32 @@
+{
+  "name": "reputation-tester",
+  "version": "1.0.0",
+  "description": "Golem Reputation System tests",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc -w",
+    "start": "node dist/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "keywords": [
+    "golem",
+    "network",
+    "application"
+  ],
+  "dependencies": {
+    "@golem-sdk/task-executor": "^1.1.1",
+    "commander": "^12.0.0",
+    "dotenv": "^16.3.1",
+    "nunjucks": "^3.2.4",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.7.1"
+  },
+  "devDependencies": {
+    "@golem-sdk/cli": "^2.0.1",
+    "@types/node": "^20.11.26",
+    "@types/nunjucks": "^3.2.6"
+  }
+}
