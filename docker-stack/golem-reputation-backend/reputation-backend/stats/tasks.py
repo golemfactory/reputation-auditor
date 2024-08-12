@@ -164,7 +164,7 @@ def cache_cpu_performance_ranking():
 
     # Get the latest CPU Multi-thread Benchmark for each provider in the last 30 days
     latest_benchmarks = CpuBenchmark.objects.filter(
-        created_at__gte=thirty_days_ago,
+        #created_at__gte=thirty_days_ago,
         benchmark_name='CPU Multi-thread Benchmark'
     ).order_by('provider_id', '-created_at').distinct('provider_id')
 
@@ -218,7 +218,7 @@ def cache_gpu_performance_ranking():
 
     # Get the highest GFLOPS for each GPU model in the last 30 days
     gpu_performance = GPUTask.objects.filter(
-        created_at__gte=thirty_days_ago
+        #created_at__gte=thirty_days_ago
     ).values('name').annotate(
         max_gflops=Max('gpu_burn_gflops')
     ).filter(max_gflops__isnull=False).order_by('-max_gflops')
