@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
+          integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+            integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+            crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- report data -->
+    <script>
+      var reportData = {{ reportData | dump | safe }};
+      const testNames = reportData.map((item) => item.name);
+      const tests = {};
+      reportData.forEach((item) => {
+        tests[item.name] = item;
+      });
+
+      const datapointClickHandler = {
+        onClick: (e, points, chart) => {
+          if (points[0] && 'datasetIndex' in points[0]) {
+            console.log(`Data points clicked: (${points.length})`)
+            points.forEach((p, index) => {
+              console.log(chart.data?.datasets[p.datasetIndex].data[p.index]);
+            });
+          }
+        },
+        interaction: {
+          intersect: true,
+        }
+      }
+
+    </script>
+</head>
+<body class="m-2">
+<main class="container mx-auto">
+    <h1>Test run report</h1>
+    <h2>Test cases summary</h2>
+    <ul>
+        {% for case in reportData %}
+        <li>
+            <strong>{{ case.name }}</strong>:
+        </li>
+        {% endfor %}
+    </ul>
+
+    <h2>Success rate</h2>
+    <div>
+        <canvas id="success-rate"></canvas>
+    </div>
+    <script>
+      (() => {
+        const ctx = document.getElementById("success-rate");
+        new Chart(ctx, {
+          type: "bar",
+          data: {
+            labels: ['Success rate, %'],
+            datasets: testNames.map((name) => ({
+              label: name,
+              data: [parseFloat((tests[name].success / (tests[name].success + tests[name].failure) * 100).toFixed(2))],
+            })),
+          },
+          options: {
+            scales: {
+              y: {
+                beginAtZero: true
+
+              }
+            }
+          }
+        });
+      })()
+    </script>
+
+
+    <h2>Benchmark times</h2>
+    <div>
+        <canvas id="benchmark-times-chart"></canvas>
+    </div>
+    <script>
+      (() => {
+        const sorted = {};
+        reportData.forEach((item) => {
+          const tasks = item.tasks.filter(t => t.success);
+          const runtimes = tasks.map(task => task.runTime);
+          sorted[item.name] = {
+            min: Math.min(...runtimes),
+            max: Math.max(...runtimes),
+            avg: tasks.reduce((acc, task) => acc + task.runTime, 0) / tasks.length,
+            median: runtimes.sort((a, b) => a - b)[Math.floor(runtimes.length / 2)],
+          }
+        });
+        const ctx = document.getElementById("benchmark-times-chart");
+        new Chart(ctx, {
+          type: "bar",
+          data: {
+            // labels: ['Success rate, %'],
+            labels: ['min', 'median', 'avg', 'max'],
+            // labels: testNames,
+            datasets: testNames.map((name) => ({
+              label: name,
+              // label: ['min', 'median', 'avg', 'max'],
+              // label: [name, 'A', 'B', 'C'],
+              // data: [
+              //   {y: 'min', x: sorted[name].min},
+              //   {y: 'median', x: sorted[name].median},
+              //   {y: 'avg', x: sorted[name].avg},
+              //   {y: 'max', x: sorted[name].max},
+              // ],
+              data: [
+                sorted[name].min,
+                sorted[name].median,
+                sorted[name].avg,
+                sorted[name].max,
+              ],
+            })),
+          },
+          options: {
+            scales: {
+              y: {
+                beginAtZero: true,
+                title: {
+                  display: true,
+                  text: 'Benchmark time, s'
+                }
+              },
+            }
+          }
+        });
+      })()
+    </script>
+
+    <h2>Burnup chart</h2>
+    <small>
+        Counted from task scheduling to task completion. Only successful tasks are counted.
+    </small>
+    <div>
+        <canvas id="burnup-chart"></canvas>
+    </div>
+    <script>
+      (() => {
+        const sorted = {};
+        reportData.forEach((item) => {
+          sorted[item.name] = item.tasks.filter(t => t.success).filter(task => task.totalTime >= 0).sort((a, b) => a.totalTime - b.totalTime);
+        });
+
+        const ctx = document.getElementById("burnup-chart");
+        const config = {
+          type: "line",
+          data: {
+            labels: ['Success rate, %'],
+            datasets: testNames.map((name) => ({
+              label: name,
+              data: [{x: 0, y: 0}, ...sorted[name].map((task, index) => ({x: task.totalTime, y: index+1, task}))],
+            })),
+          },
+          options: {
+            scales: {
+              y: {
+                beginAtZero: true,
+                title: {
+                  display: true,
+                  text: 'Completed tasks'
+                }
+              },
+              x: {
+                beginAtZero: true,
+                type: 'linear',
+                title: {
+                  display: true,
+                  text: 'Test time, s'
+                }
+              }
+            },
+            ...datapointClickHandler
+          }
+        };
+        new Chart(ctx, config);
+      })()
+    </script>
+
+
+    <h2>Benchmark times</h2>
+    <div>
+        <canvas id="bench-time-chart"></canvas>
+    </div>
+    <script>
+      (() => {
+        const sorted = {};
+        reportData.forEach((item) => {
+          sorted[item.name] = item.tasks.filter(t => t.success).filter(task => task.runTime >= 0).sort((a, b) => a.runTime - b.runTime);
+        });
+
+        const ctx = document.getElementById("bench-time-chart");
+        const config = {
+          type: "line",
+          data: {
+            labels: ['Success rate, %'],
+            datasets: testNames.map((name) => ({
+              label: name,
+              data: sorted[name].map((task, index) => ({x: index+1, y: task.runTime, task})),
+            })),
+          },
+          options: {
+            scales: {
+              y: {
+                beginAtZero: true,
+                title: {
+                  display: true,
+                  text: 'Benchmark time, s (lower is better)'
+                }
+              },
+              x: {
+                beginAtZero: false,
+                type: 'linear',
+                title: {
+                  display: true,
+                  text: 'Completed tasks (higher is better)'
+                },
+              }
+            },
+            ...datapointClickHandler
+          }
+        };
+        new Chart(ctx, config);
+      })()
+    </script>
+
+
+    <h2>Benchmark time per proposal score</h2>
+    <div>
+        <canvas id="bench-time-pscore-chart"></canvas>
+    </div>
+    <script>
+      (() => {
+        const sorted = {};
+        reportData.forEach((item) => {
+          sorted[item.name] = item.tasks.filter(t => t.success  && t.proposalScore>=0).map(task => ({x: task.runTime, y: task.proposalScore, task}));
+        });
+
+        const ctx = document.getElementById("bench-time-pscore-chart");
+        const config = {
+          type: "scatter",
+          data: {
+            datasets: testNames.map((name) => ({
+              label: name,
+              data: sorted[name],
+            })),
+          },
+          options: {
+            scales: {
+              y: {
+                beginAtZero: true,
+                title: {
+                  display: true,
+                  text: 'Agreement score'
+                }
+              },
+              x: {
+                beginAtZero: true,
+                type: 'linear',
+                label: 'Benchmark time, s'
+              }
+            },
+            ...datapointClickHandler
+          }
+        };
+        new Chart(ctx, config);
+      })()
+    </script>
+
+
+    <h2>Benchmark time per agreement score</h2>
+    <div>
+        <canvas id="bench-time-ascore-chart"></canvas>
+    </div>
+    <script>
+      (() => {
+        const sorted = {};
+        reportData.forEach((item) => {
+          sorted[item.name] = item.tasks.filter(t => t.success  && t.agreementScore>=0).map(task => ({x: task.runTime, y: task.agreementScore, task}));
+        });
+
+        const ctx = document.getElementById("bench-time-ascore-chart");
+        const config = {
+          type: "scatter",
+          data: {
+            datasets: testNames.map((name) => ({
+              label: name,
+              data: sorted[name],
+            })),
+          },
+          options: {
+            scales: {
+              y: {
+                beginAtZero: true,
+                title: {
+                  display: true,
+                  text: 'Agreement score'
+                }
+              },
+              x: {
+                beginAtZero: true,
+                type: 'linear',
+                label: 'Benchmark time, s'
+              },
+            },
+            ...datapointClickHandler
+          }
+        };
+        new Chart(ctx, config);
+      })()
+    </script>
+
+
+    <h2>Available candidates</h2>
+    <div>
+        <canvas id="candidates-chart"></canvas>
+    </div>
+    <script>
+      (() => {
+        const sorted = {};
+        reportData.forEach((item) => {
+          sorted[item.name] = (item.initialCandidates ?? []).sort((a, b) => b.score - a.score);
+        });
+
+        const ctx = document.getElementById("candidates-chart");
+        const config = {
+          type: "scatter",
+          data: {
+            datasets: testNames.map((name) => ({
+              label: name,
+              data: sorted[name].map((data, index) => {
+                return {
+                    x: index + 1,
+                    y: data.score,
+                  candidate: data
+                }
+              }),
+            })),
+          },
+          options: {
+            scales: {
+              y: {
+                beginAtZero: true,
+                title: {
+                  display: true,
+                  text: 'Agreement score'
+                }
+              },
+              x: {
+                beginAtZero: true,
+                type: 'linear',
+              }
+            },
+            ...datapointClickHandler,
+          }
+        };
+        new Chart(ctx, config);
+      })()
+    </script>
+
+
+
+    <h2>Providers availability</h2>
+    <div>
+        <canvas id="providers-chart"></canvas>
+    </div>
+    <script>
+      (() => {
+        const sorted = {};
+        reportData.forEach((item) => {
+          const tasks = item.tasks.filter(t => t.success);
+          const known = new Set();
+          let unknown = 0;
+          item.reputationData?.testedProviders.forEach((p) => known.add(p.provider.id));
+          item.reputationData?.untestedProviders.forEach((p) => known.add(p.provider.id));
+          item.reputationData?.rejectedProviders.forEach((p) => known.add(p.provider.id));
+          item.seenProviders.forEach((p) => {
+            if (!known.has(p)) unknown++;
+          });
+          sorted[item.name] = {
+            known: known.size,
+            testedProviders: item.reputationData?.testedProviders.length,
+            untestedProviders: item.reputationData?.untestedProviders.length,
+            rejected: item.reputationData?.rejectedProviders.length,
+            possible: item.providersMatchingFilter,
+            seen: item.seenProviders.length,
+            unknown,
+            accepted: item.acceptedProviders.length,
+          }
+
+        });
+        const ctx = document.getElementById("providers-chart");
+        new Chart(ctx, {
+          type: "bar",
+          data: {
+            // labels: ['Success rate, %'],
+            labels: ['Known', 'Tested', 'Untested', 'Rejected', 'Matching weights', 'Seen', 'Unknown', 'Accepted'],
+            // labels: testNames,
+            datasets: testNames.map((name) => ({
+              label: name,
+              // label: ['min', 'median', 'avg', 'max'],
+              // label: [name, 'A', 'B', 'C'],
+              // data: [
+              //   {y: 'min', x: sorted[name].min},
+              //   {y: 'median', x: sorted[name].median},
+              //   {y: 'avg', x: sorted[name].avg},
+              //   {y: 'max', x: sorted[name].max},
+              // ],
+              data: [
+                sorted[name].known,
+                sorted[name].testedProviders,
+                sorted[name].untestedProviders,
+                sorted[name].rejected,
+                sorted[name].possible,
+                sorted[name].seen,
+                sorted[name].unknown,
+                sorted[name].accepted,
+              ],
+            })),
+          },
+          options: {
+            scales: {
+              y: {
+                beginAtZero: true,
+                title: {
+                  display: true,
+                  text: 'Number of providers'
+                }
+              },
+            }
+          }
+        });
+      })()
+    </script>
+
+</main>
+</body>
+</html>

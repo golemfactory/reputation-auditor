@@ -122,7 +122,12 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
             // providerRunCost.set(event.detail.provider.id, cost)
             providerRunCost.set(event.detail.providerId, cost)
         }
-    })
+    });
+
+    events.addEventListener("ContextBefore", (event: any) => {
+        logger.info({deployTime: event.detail.beforeTimeMs / 1000, providerId: event.detail.providerId, activityId: event.detail.activityId}, 'Spinup time');
+        // providerSpinupTime.set(event.detail.providerId, event.detail.beforeTimeMs)
+    });
 
     const taskId = await sendStartTaskSignal(logger)
     if (!taskId) {

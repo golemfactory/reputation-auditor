@@ -292,7 +292,7 @@ export class Golem {
             throw new GolemError("Failed to execute the task on Golem", err, activity)
         } finally {
             await this.activityPool.destroy(activity)
-            this.logger.debug(`Released activity %s after task execution ${activity.id}`);
+            this.logger.debug(`Released activity ${activity.id} after task execution`);
         }
     }
 
@@ -374,7 +374,7 @@ export class Golem {
                     }
 
                     const result = state !== ActivityStateEnum.Terminated
-                    this.logger.debug("Validating activity in the pool, result: %s, state: %s", result, state)
+                    this.logger.debug(`Validating activity in the pool, result: ${result}, state: ${state}`)
 
                     if (this.config.computedAlready.includes(activity.agreement.id)) {
                         return false
