@@ -15,7 +15,7 @@ app = Celery("core")
 
 @app.on_after_finalize.connect
 def setup_periodic_tasks(sender, **kwargs):
-    from api.tasks import monitor_nodes_task, ping_providers_task, process_offers_from_redis, update_provider_scores, get_blacklisted_operators, get_blacklisted_providers, delete_old_ping_results, run_network_benchmark
+    from api.tasks import monitor_nodes_task, ping_providers_task, process_offers_from_redis, update_provider_scores, get_blacklisted_operators, get_blacklisted_providers, delete_old_ping_results
     from stats.tasks import populate_daily_provider_stats, cache_provider_success_ratio, cache_provider_uptime, cache_cpu_performance_ranking, cache_gpu_performance_ranking
     sender.add_periodic_task(
         crontab(minute=0, hour=0),  # daily at midnight
@@ -46,12 +46,6 @@ def setup_periodic_tasks(sender, **kwargs):
         update_provider_scores.s(network="mainnet"),
         queue="default",
         options={"queue": "default", "routing_key": "default"},
-    )
-    sender.add_periodic_task(
-        60.0,
-        run_network_benchmark.s(),
-        queue="benchmarker",
-        options={"queue": "benchmarker", "routing_key": "benchmarker"},
     )
     sender.add_periodic_task(
         3600,  # 1 hour
