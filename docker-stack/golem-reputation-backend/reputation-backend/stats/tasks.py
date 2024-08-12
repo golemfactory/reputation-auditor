@@ -150,3 +150,80 @@ def cache_provider_success_ratio():
 
     redis_client.set('stats_provider_success_ratio',
                      json.dumps(success_ratio_data))
+
+
+from django.db.models import Max, F, Subquery, OuterRef, Prefetch
+from api.models import CpuBenchmark, Offer, GPUTask
+from datetime import timedelta
+
+
+@app.task
+def cache_cpu_performance_ranking():
+    # Get the date 30 days ago
+    thirty_days_ago = timezone.now() - timedelta(days=30)
+
+    # Get the latest CPU Multi-thread Benchmark for each provider in the last 30 days
+    latest_benchmarks = CpuBenchmark.objects.filter(
+        created_at__gte=thirty_days_ago,
+        benchmark_name='CPU Multi-thread Benchmark'
+    ).order_by('provider_id', '-created_at').distinct('provider_id')
+
+    # Prefetch related providers and their latest offers
+    providers = Provider.objects.filter(
+        cpubenchmark__in=latest_benchmarks
+    ).prefetch_related(
+        Prefetch(
+            'offer_set',
+            queryset=Offer.objects.filter(
+                accepted=True
+            ).order_by('-created_at'),
+            to_attr='latest_offer'
+        )
+    )
+
+    cpu_performance = []
+
+    for provider in providers:
+        benchmark = next((b for b in latest_benchmarks if b.provider_id == provider.node_id), None)
+        if benchmark and provider.latest_offer:
+            latest_offer = provider.latest_offer[0]
+            cpu_brand = latest_offer.offer.get('golem.inf.cpu.brand')
+            if cpu_brand:
+                cpu_performance.append({
+                    'cpu_brand': cpu_brand,
+                    'events_per_second': benchmark.events_per_second,
+                    'provider_id': provider.node_id
+                })
+
+    # Remove duplicates, keeping the highest performance for each CPU brand
+    unique_cpu_performance = {}
+    for item in cpu_performance:
+        cpu_brand = item['cpu_brand']
+        if cpu_brand not in unique_cpu_performance or item['events_per_second'] > unique_cpu_performance[cpu_brand]['events_per_second']:
+            unique_cpu_performance[cpu_brand] = item
+
+    # Sort the list from most performant to least
+    sorted_cpu_performance = sorted(
+        unique_cpu_performance.values(),
+        key=lambda x: x['events_per_second'],
+        reverse=True
+    )
+
+    redis_client.set('stats_cpu_performance_ranking', json.dumps(sorted_cpu_performance))
+
+@app.task
+def cache_gpu_performance_ranking():
+    # Get the date 30 days ago
+    thirty_days_ago = timezone.now() - timedelta(days=30)
+
+    # Get the highest GFLOPS for each GPU model in the last 30 days
+    gpu_performance = GPUTask.objects.filter(
+        created_at__gte=thirty_days_ago
+    ).values('name').annotate(
+        max_gflops=Max('gpu_burn_gflops')
+    ).filter(max_gflops__isnull=False).order_by('-max_gflops')
+
+    # Convert queryset to list of dictionaries
+    result = list(gpu_performance)
+
+    redis_client.set('stats_gpu_performance_ranking', json.dumps(result))

@@ -522,3 +522,23 @@ def get_network_average_latency(request):
                 }
 
     return JsonResponse(result)
+
+
+
+
+
+@api.get("/cpu/performance-ranking", tags=["Stats"])
+def get_cpu_performance_ranking(request):
+    cached_data = redis_client.get('stats_cpu_performance_ranking')
+    if cached_data:
+        return JsonResponse(json.loads(cached_data), safe=False)
+    else:
+        return JsonResponse({"error": "CPU performance ranking data not available"}, status=503)
+
+@api.get("/gpu/performance-ranking", tags=["Stats"])
+def get_gpu_performance_ranking(request):
+    cached_data = redis_client.get('stats_gpu_performance_ranking')
+    if cached_data:
+        return JsonResponse(json.loads(cached_data), safe=False)
+    else:
+        return JsonResponse({"error": "GPU performance ranking data not available"}, status=503)
