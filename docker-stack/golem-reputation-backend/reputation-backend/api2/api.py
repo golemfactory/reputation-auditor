@@ -642,6 +642,13 @@ def get_provider_scores(request, node_id: str = Path(..., description="The node_
         provider=provider
     ).order_by('-created_at').values_list('mbit_per_second', flat=True).first()
 
+    # GPU Score
+    gpu_task = GPUTask.objects.filter(provider=provider).order_by('-created_at').first()
+    if gpu_task:
+        scores['gpu_gflops_score'] = gpu_task.gpu_burn_gflops
+    else:
+        scores['gpu_gflops_score'] = None
+
     # Ping
     regions = ["europe", "asia", "us"]
     scores['ping'] = {}
