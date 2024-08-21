@@ -71,12 +71,12 @@ def setup_periodic_tasks(sender, **kwargs):
         queue="default",
         options={"queue": "default", "routing_key": "default"},
     )
-    sender.add_periodic_task(
-        30.0,
-        ping_providers_task.s(p2p=False),
-        queue="pinger",
-        options={"queue": "pinger", "routing_key": "pinger"},
-    )
+#    sender.add_periodic_task( Not needed anymore, separate docker task now.
+#        30.0,
+#        ping_providers_task.s(p2p=False),
+#        queue="pinger",
+#        options={"queue": "pinger", "routing_key": "pinger"},
+#    )
     sender.add_periodic_task(
         30.0,
         process_offers_from_redis.s(),

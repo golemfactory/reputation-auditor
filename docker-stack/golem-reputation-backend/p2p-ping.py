@@ -156,7 +156,7 @@ async def ping_providers(p2p):
 
 # Run the script continuously
 async def main():
-    p2p = True  # Adjust this as needed
+    p2p = os.environ.get('P2P', 'false').lower() == 'true'
     while True:
         await ping_providers(p2p)
 
