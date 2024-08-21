@@ -176,15 +176,15 @@ class CpuBenchmark(models.Model):
 
 class GPUTask(models.Model):
     provider = models.ForeignKey('Provider', on_delete=models.CASCADE)
-    name = models.CharField(max_length=255)  # Name of the GPU task
-    pcie = models.IntegerField()  # PCIe slot number
-    memory_total = models.IntegerField()  # Total memory in MB
-    memory_free = models.IntegerField()  # Free memory in MB
-    cuda_cap = models.DecimalField(
-        max_digits=4, decimal_places=2)  # CUDA capability version
-    gpu_burn_gflops = models.IntegerField(
-        null=True, blank=True)  # GFLOPS for GPU burn
+    gpu_info = models.JSONField()  # This will store the entire GPU information structure
+    gpu_burn_gflops = models.FloatField()  # Total GFLOPS for all GPUs combined
     created_at = models.DateTimeField(auto_now_add=True, null=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['provider']),
+            models.Index(fields=['created_at']),
+        ]
 
 
 class NetworkBenchmark(models.Model):

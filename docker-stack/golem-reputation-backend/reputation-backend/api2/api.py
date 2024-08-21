@@ -1127,12 +1127,12 @@ class GPUPerformanceResponse(BaseModel):
     identical_gpus_avg_gflops: float
     error: str = None  # Optional field for error messages
 
-
+from django.db.models import JSONField
 @api.get(
     "/provider/gpu/performance/comparison/{node_id}",
     tags=["Reputation"],
     summary="Evaluate GPU performance for a specific provider",
-    description="This endpoint evaluates the GPU performance of a specific provider compared to other identical GPU models in the database.",
+    description="This endpoint evaluates the GPU performance of a specific provider compared to other identical GPU setups in the database.",
     response={200: GPUPerformanceResponse}
 )
 def evaluate_gpu_performance(request, node_id: str):
@@ -1142,22 +1142,32 @@ def evaluate_gpu_performance(request, node_id: str):
         return JsonResponse({"error": "Provider not found"}, status=200)
 
     # Fetch the GPU tasks for the given provider
-    provider_gpu_tasks = GPUTask.objects.filter(provider=provider)
+    provider_gpu_tasks = GPUTask.objects.filter(provider=provider).order_by('-created_at')
 
     if not provider_gpu_tasks.exists():
         return JsonResponse({"error": "No GPU tasks found for this provider"}, status=200)
+
+    latest_gpu_task = provider_gpu_tasks.first()
+    gpu_info = json.loads(latest_gpu_task.gpu_info)
+
+    if not gpu_info.get('gpus'):
+        return JsonResponse({"error": "No GPU information available"}, status=200)
 
     # Calculate the average gpu_burn_gflops for the provider's GPUs
     provider_avg_gflops = provider_gpu_tasks.aggregate(
         avg_gflops=Avg('gpu_burn_gflops'))['avg_gflops']
 
-    # Calculate the average gpu_burn_gflops for identical GPU models in the database
-    identical_gpus_avg_gflops = GPUTask.objects.filter(
-        name__in=provider_gpu_tasks.values_list('name', flat=True)
-    ).exclude(provider=provider).aggregate(avg_gflops=Avg('gpu_burn_gflops'))['avg_gflops']
+    # Find providers with identical GPU setups
+    identical_setups = GPUTask.objects.filter(
+        gpu_info=Cast(json.dumps(gpu_info), JSONField())
+    ).exclude(provider=provider)
 
-    if identical_gpus_avg_gflops is None:
-        return JsonResponse({"error": "No comparison data available"}, status=200)
+    if not identical_setups.exists():
+        return JsonResponse({"error": "No comparison data available for identical GPU setups"}, status=200)
+
+    # Calculate the average gpu_burn_gflops for identical GPU setups
+    identical_gpus_avg_gflops = identical_setups.aggregate(
+        avg_gflops=Avg('gpu_burn_gflops'))['avg_gflops']
 
     # Compare the provider's GPU performance with the average
     if provider_avg_gflops >= identical_gpus_avg_gflops * 1.05:
@@ -1173,5 +1183,6 @@ def evaluate_gpu_performance(request, node_id: str):
         "node_id": node_id,
         "performance": performance,
         "provider_avg_gflops": provider_avg_gflops,
-        "identical_gpus_avg_gflops": identical_gpus_avg_gflops
+        "identical_gpus_avg_gflops": identical_gpus_avg_gflops,
+        "gpu_info": gpu_info
     })

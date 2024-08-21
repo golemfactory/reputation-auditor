@@ -20,7 +20,7 @@ import { Proposal } from "@golem-sdk/golem-js/dist/market"
 
 import genericPool from "generic-pool"
 import debug from "debug"
-import { Logger } from "pino";
+import { Logger } from "pino"
 
 export class GolemError extends Error {
     constructor(msg: string, public readonly previous?: unknown, public readonly activity?: Activity) {
@@ -144,7 +144,7 @@ export interface GolemConfig {
 
     eventTarget?: EventTarget
 
-    taskId: string;
+    taskId: string
 }
 
 export class Golem {
@@ -165,7 +165,7 @@ export class Golem {
     private usedProviders = new Set<string>()
 
     constructor(config: GolemConfig, logger: Logger) {
-        this.logger = logger;
+        this.logger = logger
 
         this.config = config
 
@@ -247,7 +247,7 @@ export class Golem {
             minCpuThreads: this.config.deploy.resources.minCpu,
             minStorageGib: this.config.deploy.resources.minStorageGib,
             logger: createLogger("golem-js:package"),
-            engine: 'vm-nvidia'
+            engine: "vm-nvidia",
         })
 
         await Promise.all([
@@ -261,7 +261,7 @@ export class Golem {
 
     async sendTask<T>(task: Worker<T>): Promise<T | undefined> {
         const activity = await this.activityPool.acquire()
-        this.logger.debug(`Acquired activity ${activity.id} to execute the task`);
+        this.logger.debug(`Acquired activity ${activity.id} to execute the task`)
 
         try {
             const ctx = new WorkContext(activity, {
@@ -289,18 +289,18 @@ export class Golem {
 
             return result
         } catch (err) {
-            this.logger.error(err, `Running the task on Golem failed with this error`);
+            this.logger.error(err, `Running the task on Golem failed with this error`)
             throw new GolemError("Failed to execute the task on Golem", err, activity)
         } finally {
             await this.activityPool.destroy(activity)
-            this.logger.debug(`Released activity ${activity.id} after task execution`);
+            this.logger.debug(`Released activity ${activity.id} after task execution`)
         }
     }
 
     async stop() {
-        this.logger.debug("Waiting for the activity pool to drain");
+        this.logger.debug("Waiting for the activity pool to drain")
         await this.activityPool.drain()
-        this.logger.debug("Activity pool drained");
+        this.logger.debug("Activity pool drained")
 
         // FIXME: This component should really make sure that we accept all invoices and don't wait for payment
         //   as that's a different process executed by the payment driver. Accepted means work is done.
@@ -342,25 +342,25 @@ export class Golem {
                         return activity
                     } catch (e) {
                         this.logger.error(e, "Failed to create activity in activity pool")
-                        throw e;
+                        throw e
                     }
                 },
                 destroy: async (activity: Activity) => {
-                    this.logger.info(`Destroying activity ${activity.id} from the pool`);
+                    this.logger.info(`Destroying activity ${activity.id} from the pool`)
                     try {
-                        await activity.stop();
-                        this.logger.info(`Activity ${activity.id} stopped`);
+                        await activity.stop()
+                        this.logger.info(`Activity ${activity.id} stopped`)
 
                         // FIXME #sdk Use Agreement and not string
                         await this.agreementService.releaseAgreement(activity.agreement.id, false)
                         // destroy agreement after releasing
-                        this.logger.info(`Agreement from ${activity.id} activity released`);
+                        this.logger.info(`Agreement from ${activity.id} activity released`)
 
                         // FIXME #sdk stopPayments? stopAcceptDebitNotes? In the logs I see debit notes from past activities, which I terminated?
                         //  Or did the terminate fail and the SDK does not send that?
                     } catch (e) {
                         this.logger.error(e, `Failed to destroy activity ${activity.id}`)
-                        throw e;
+                        throw e
                     }
                 },
                 validate: async (activity: Activity) => {
@@ -423,11 +423,51 @@ export class Golem {
         return async (proposal) => {
             let accepted = true
             let reason = ""
+            const properties = proposal.properties
+            const cudaInfo = {
+                enabled: properties["golem.!exp.gap-35.v1.inf.gpu.cuda.enabled"],
+                version: properties["golem.!exp.gap-35.v1.inf.gpu.cuda.version"],
+                driverVersion: properties["golem.!exp.gap-35.v1.inf.gpu.cuda.driver.version"],
+            }
 
+            const gpus = []
+            let gpuIndex = 0
+            while (properties[`golem.!exp.gap-35.v1.inf.gpu.d${gpuIndex}.model`]) {
+                gpus.push({
+                    model: properties[`golem.!exp.gap-35.v1.inf.gpu.d${gpuIndex}.model`],
+                    memory: properties[`golem.!exp.gap-35.v1.inf.gpu.d${gpuIndex}.memory.total.gib`],
+                    cores: properties[`golem.!exp.gap-35.v1.inf.gpu.d${gpuIndex}.cuda.cores`],
+                    quantity: properties[`golem.!exp.gap-35.v1.inf.gpu.d${gpuIndex}.quantity`] || 1,
+                })
+                gpuIndex++
+            }
+
+            // If no GPUs were found with .d0, .d1, etc., check for a single GPU without index
+            if (gpus.length === 0 && properties["golem.!exp.gap-35.v1.inf.gpu.model"]) {
+                gpus.push({
+                    model: properties["golem.!exp.gap-35.v1.inf.gpu.model"],
+                    memory: properties["golem.!exp.gap-35.v1.inf.gpu.memory.total.gib"],
+                    cores: properties["golem.!exp.gap-35.v1.inf.gpu.cuda.cores"],
+                    quantity: 1,
+                })
+            }
+
+            const logOutput = {
+                providerId: proposal.provider.id,
+                cudaInfo: cudaInfo,
+                gpus: gpus,
+            }
+
+            if (gpus.length > 0) {
+                console.log(JSON.stringify(logOutput, null, 2))
+            } else {
+                console.log("No GPUs found. Printing all properties:")
+                console.log(JSON.stringify(properties, null, 2))
+            }
 
             if (this.usedProviders.has(proposal.provider.id)) {
                 accepted = false
-                reason = "Provider already benchmarked.";
+                reason = "Provider already benchmarked."
             } else if (this.isFromDisallowedOperator(proposal)) {
                 accepted = false
                 reason = "Provider's wallet address is blacklisted."
@@ -440,9 +480,9 @@ export class Golem {
             }
 
             if (!accepted) {
-                this.logger.info({provider: proposal.provider, reason, },`Rejecting proposal`);
+                this.logger.info({ provider: proposal.provider, reason }, `Rejecting proposal`)
             } else {
-                this.logger.info({provider: proposal.provider },`Proposal accepted`);
+                this.logger.info({ provider: proposal.provider }, `Proposal accepted`)
             }
 
             // Send offer with the decision and reason
@@ -478,7 +518,7 @@ export class Golem {
         return Boolean(this.config.market.withoutProviders?.includes(proposal.provider.id))
     }
     private isOverpricedProvider(providerId: string, proposal: Proposal): boolean {
-        return false;
+        return false
 
         // const providerData = this.config.market.statsData?.find((provider: ProviderData) => provider.node_id === providerId)
         //

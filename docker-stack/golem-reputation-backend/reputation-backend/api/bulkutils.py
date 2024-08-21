@@ -202,12 +202,10 @@ def process_gpu_task(data_list):
 
         gpu_task_objects.append(GPUTask(
             provider=provider,
-            name=data['name'],
-            pcie=int(data['pcie']),
-            memory_total=int(data['memory_total']),
-            memory_free=int(data['memory_free']),
-            cuda_cap=Decimal(data['cuda_cap']),
-            gpu_burn_gflops=int(data['gpu_burn_gflops']),
+            gpu_info={
+                'gpus': data['gpus']
+            },
+            gpu_burn_gflops=data['gpu_burn_gflops']
         ))
 
     # Now, bulk create all GPUTask objects

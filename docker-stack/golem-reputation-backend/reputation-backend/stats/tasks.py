@@ -211,19 +211,40 @@ def cache_cpu_performance_ranking():
 
     redis_client.set('stats_cpu_performance_ranking', json.dumps(sorted_cpu_performance))
 
+from django.db.models import Max, F
+from django.db.models.functions import Cast
+from django.db.models import JSONField
+import json
+
 @app.task
 def cache_gpu_performance_ranking():
     # Get the date 30 days ago
     thirty_days_ago = timezone.now() - timedelta(days=30)
 
-    # Get the highest GFLOPS for each GPU model in the last 30 days
+    # Get the highest GFLOPS for each unique GPU setup in the last 30 days
     gpu_performance = GPUTask.objects.filter(
         #created_at__gte=thirty_days_ago
-    ).values('name').annotate(
+    ).values('gpu_info').annotate(
         max_gflops=Max('gpu_burn_gflops')
     ).filter(max_gflops__isnull=False).order_by('-max_gflops')
 
-    # Convert queryset to list of dictionaries
-    result = list(gpu_performance)
+    # Process and format the results
+    result = []
+    seen_setups = set()
 
+    for setup in gpu_performance:
+        gpu_info = setup['gpu_info']
+        gpus = gpu_info.get('gpus', [])
+        
+        # Create a unique identifier for this GPU setup
+        setup_key = tuple(sorted((gpu['name'], gpu['quantity']) for gpu in gpus))
+        
+        if setup_key not in seen_setups:
+            seen_setups.add(setup_key)
+            result.append({
+                'setup': [{'name': gpu['name'], 'quantity': gpu['quantity']} for gpu in gpus],
+                'max_gflops': setup['max_gflops']
+            })
+
+    # Store the result in Redis
     redis_client.set('stats_gpu_performance_ranking', json.dumps(result))
