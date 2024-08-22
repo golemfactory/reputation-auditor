@@ -4,6 +4,8 @@ import aiohttp  # For asynchronous HTTP requests
 import os  # To access environment variables
 
 # Fetch node IDs from the API
+
+
 async def async_fetch_node_ids():
     url = 'https://api.stats.golem.network/v2/network/online'
 
@@ -18,6 +20,8 @@ async def async_fetch_node_ids():
                 return []
 
 # Send ping results to the endpoint
+
+
 async def async_bulk_create_ping_results(chunk_data, p2p):
 
     endpoint = os.getenv('REPUTATION_PING_ENDPOINT')
@@ -34,7 +38,8 @@ async def async_bulk_create_ping_results(chunk_data, p2p):
                 'provider_id': data['provider_id'],
                 'ping_udp': data['ping_udp'],
                 'ping_tcp': data['ping_tcp'],
-                'is_p2p': data['is_p2p']
+                'is_p2p': data['is_p2p'],
+                'from_non_p2p_pinger': not p2p,
             } for data in chunk_data
         ]
 
@@ -55,6 +60,8 @@ async def async_bulk_create_ping_results(chunk_data, p2p):
             print(f"An error occurred during POST request: {str(e)}")
 
 # Convert ping time strings into milliseconds
+
+
 def parse_ping_time(ping_time_str):
     """Converts a ping time string into milliseconds."""
     if ping_time_str is None:
@@ -74,6 +81,8 @@ def parse_ping_time(ping_time_str):
         return total_ms
 
 # Ping a provider and process the result
+
+
 async def ping_provider(provider_id):
     try:
         results = []
@@ -90,8 +99,10 @@ async def ping_provider(provider_id):
             if stdout:
                 result = json.loads(stdout.decode())
                 for ping_data in result:
-                    ping_data['ping (tcp)'] = parse_ping_time(ping_data['ping (tcp)'])
-                    ping_data['ping (udp)'] = parse_ping_time(ping_data['ping (udp)'])
+                    ping_data['ping (tcp)'] = parse_ping_time(
+                        ping_data['ping (tcp)'])
+                    ping_data['ping (udp)'] = parse_ping_time(
+                        ping_data['ping (udp)'])
                 results.append(result)
             else:
                 print("ERROR pinging", stderr.decode())
@@ -119,6 +130,8 @@ async def ping_provider(provider_id):
         return False
 
 # Process each provider ID and send ping results in chunks
+
+
 async def ping_providers(p2p):
     node_ids = await async_fetch_node_ids()
     chunk_size = 5
@@ -155,9 +168,26 @@ async def ping_providers(p2p):
         await async_bulk_create_ping_results(all_chunk_data, p2p)
 
 # Run the script continuously
+import subprocess
+
+
+async def is_p2p():
+    try:
+        result = subprocess.run(["yagna", "net", "status", "--json"], capture_output=True, text=True)
+        if result.returncode == 0:
+            status = json.loads(result.stdout)
+            return status.get("publicAddress") is not None
+        else:
+            print(f"Error running yagna net status: {result.stderr}")
+            return False
+    except Exception as e:
+        print(f"An error occurred while checking p2p status: {str(e)}")
+        return False
+
 async def main():
-    p2p = os.environ.get('P2P', 'false').lower() == 'true'
     while True:
+        p2p = await is_p2p()
+        print("P2P mode:", p2p)
         await ping_providers(p2p)
 
 if __name__ == "__main__":

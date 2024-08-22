@@ -23,7 +23,7 @@ const program = new Command();
 program
   .option('-a, --accept <providers>', 'Comma-separated list of provider IDs to accept, all others will be rejected.', parseAndJoinList, [])
   .option('-r, --reject <providers>', 'Comma-separated list of provider IDs to reject, all others will be accepted.', parseAndJoinList, [])
-  .option('-c, --count <count>', 'Number of providers to run the benchmark on.', myParseInt, 50)
+  .option('-c, --count <count>', 'Number of providers to run the benchmark on.', myParseInt, 200)
   .option('-t, --test-offers <duration>', 'Test only, do not accept any offers. Duration in seconds.', myParseInt, 0)
 
 

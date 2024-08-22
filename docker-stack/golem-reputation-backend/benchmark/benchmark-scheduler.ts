@@ -55,7 +55,7 @@ function executeVmBenchmark(): Promise<void> {
  * Run benchmark script and pipe stdout and stderr to the console.
  */
 function executeVmNvidiaBenchmark(): Promise<void> {
-  return executeBenchmarkerScript("npm", ["run", "gpu-benchmark", "--", "--count", "50"]);
+  return executeBenchmarkerScript("npm", ["run", "gpu-benchmark", "--", "--count", "200"]);
 }
 
 /**

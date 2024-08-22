@@ -32,9 +32,9 @@ jobs:
             - name: Deploy to Asia reputation instance
               uses: appleboy/ssh-action@master
               with:
-                  host: ${{ secrets.ASIA_HOST }}
-                  username: ${{ secrets.USERNAME }}
-                  key: ${{ secrets.ASIA_KEY }}
+                  host: ${{ secrets.MAIN_HOST }}
+                  username: ${{ secrets.MAIN_USERNAME }}
+                  key: ${{ secrets.MAIN_KEY }}
                   port: ${{ secrets.PORT }}
                   script: |
                       docker service update --force --image ghcr.io/golemfactory/golem-reputation-backend:${{ github.sha }} reputation_django
