@@ -653,18 +653,31 @@ def get_provider_scores(request, node_id: str = Path(..., description="The node_
     regions = ["europe", "asia", "us"]
     scores['ping'] = {}
 
+    # Fetch all relevant ping results in a single query
+    ping_results = PingResult.objects.filter(
+        provider=provider,
+        region__in=regions
+    ).order_by('-created_at').values('region', 'is_p2p', 'ping_udp')
+
+    # Process the results
+    ping_data = {}
+    for result in ping_results:
+        region = result['region']
+        is_p2p = result['is_p2p']
+        ping_udp = result['ping_udp']
+        
+        if region not in ping_data:
+            ping_data[region] = {'p2p': [], 'non_p2p': []}
+        
+        key = 'p2p' if is_p2p else 'non_p2p'
+        if len(ping_data[region][key]) < 5:
+            ping_data[region][key].append(ping_udp)
+
+    # Calculate averages and populate scores
     for region in regions:
         scores['ping'][region] = {
-            "p2p": PingResult.objects.filter(
-                provider=provider,
-                region=region,
-                is_p2p=True
-            ).order_by('-created_at').values_list('ping_udp', flat=True)[:5].aggregate(avg_ping=Avg('ping_udp'))['avg_ping'],
-            "non_p2p": PingResult.objects.filter(
-                provider=provider,
-                region=region,
-                is_p2p=False
-            ).order_by('-created_at').values_list('ping_udp', flat=True)[:5].aggregate(avg_ping=Avg('ping_udp'))['avg_ping']
+            'p2p': sum(ping_data.get(region, {}).get('p2p', [0])) / len(ping_data.get(region, {}).get('p2p', [1])) if ping_data.get(region, {}).get('p2p') else None,
+            'non_p2p': sum(ping_data.get(region, {}).get('non_p2p', [0])) / len(ping_data.get(region, {}).get('non_p2p', [1])) if ping_data.get(region, {}).get('non_p2p') else None
         }
     return JsonResponse({"node_id": node_id, "scores": scores})
 
