@@ -20,35 +20,29 @@ def penalty_weight(deviation):
     else:
         return 0.4  # Larger penalty
 
-from django.db.models import Sum, Case, When, F
-from django.utils import timezone
-def calculate_uptime(provider_id):
 
+def calculate_uptime(provider_id):
     provider = Provider.objects.get(node_id=provider_id)
-    
-    # Calculate total online duration using database aggregation
-    online_duration = NodeStatusHistory.objects.filter(
-        provider=provider,
-        is_online=True
-    ).aggregate(
-        total_duration=Sum(
-            Case(
-                When(
-                    id__in=NodeStatusHistory.objects.filter(
-                        provider=provider,
-                        is_online=False
-                    ).values('id'),
-                    then=F('timestamp') - F('provider__nodestatushistory__timestamp')
-                ),
-                default=timezone.now() - F('timestamp')
-            )
-        )
-    )['total_duration'] or timedelta(0)
+    statuses = NodeStatusHistory.objects.filter(
+        provider=provider).order_by('timestamp')
+
+    online_duration = timedelta(0)
+    last_online_time = None
+
+    for status in statuses:
+        if status.is_online:
+            last_online_time = status.timestamp
+        elif last_online_time:
+            online_duration += status.timestamp - last_online_time
+            last_online_time = None
+
+    # Check if the node is currently online and add the duration
+    if last_online_time is not None:
+        online_duration += timezone.now() - last_online_time
 
     total_duration = timezone.now() - provider.created_at
-    uptime_percentage = (online_duration.total_seconds() / total_duration.total_seconds()) * 100
-
-
+    uptime_percentage = (online_duration.total_seconds() /
+                         total_duration.total_seconds()) * 100
     return uptime_percentage
 
 
