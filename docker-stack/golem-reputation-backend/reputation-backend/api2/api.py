@@ -566,119 +566,110 @@ def check_blacklist(request, node_id: str = Query(..., description="The node_id 
     description="This endpoint retrieves all the scores for a specific provider based on the provided node_id."
 )
 def get_provider_scores(request, node_id: str = Path(..., description="The node_id of the provider to retrieve scores for.")):
+    from django.db import transaction
+    from django.db.models import Max, Count, Case, When, F, FloatField, Avg
+
     try:
-        provider = Provider.objects.get(node_id=node_id)
+        with transaction.atomic():
+            provider = Provider.objects.select_related().get(node_id=node_id)
+
+            scores = {
+                'uptime': calculate_uptime(provider.node_id),
+                'cpuMultiThreadScore': None,
+                'cpuSingleThreadScore': None,
+                'memorySeqRead': None,
+                'memorySeqWrite': None,
+                'memoryRandRead': None,
+                'memoryRandWrite': None,
+                'randomReadDiskThroughput': None,
+                'randomWriteDiskThroughput': None,
+                'sequentialReadDiskThroughput': None,
+                'sequentialWriteDiskThroughput': None,
+                'networkDownloadSpeed': None,
+                'gpu_gflops_score': None,
+                'successRate': None,
+                'ping': {
+                    'europe': {'p2p': None, 'non_p2p': None},
+                    'asia': {'p2p': None, 'non_p2p': None},
+                    'us': {'p2p': None, 'non_p2p': None}
+                }
+            }
+
+            # CPU Benchmarks
+            cpu_results = CpuBenchmark.objects.filter(provider=provider).values('benchmark_name').annotate(
+                score=Max('events_per_second')
+            )
+            for result in cpu_results:
+                if result['benchmark_name'] == 'CPU Multi-thread Benchmark':
+                    scores['cpuMultiThreadScore'] = result['score']
+                elif result['benchmark_name'] == 'CPU Single-thread Benchmark':
+                    scores['cpuSingleThreadScore'] = result['score']
+
+            # Memory Benchmarks
+            memory_results = MemoryBenchmark.objects.filter(provider=provider).values('benchmark_name').annotate(
+                score=Max('throughput_mi_b_sec')
+            )
+            for result in memory_results:
+                if result['benchmark_name'] == 'Sequential_Read_Performance__Single_Thread_':
+                    scores['memorySeqRead'] = result['score']
+                elif result['benchmark_name'] == 'Sequential_Write_Performance__Single_Thread_':
+                    scores['memorySeqWrite'] = result['score']
+                elif result['benchmark_name'] == 'Random_Read_Performance__Multi_threaded_':
+                    scores['memoryRandRead'] = result['score']
+                elif result['benchmark_name'] == 'Random_Write_Performance__Multi_threaded_':
+                    scores['memoryRandWrite'] = result['score']
+
+            # Disk Benchmarks
+            disk_results = DiskBenchmark.objects.filter(provider=provider).values('benchmark_name').annotate(
+                score=Case(
+                    When(benchmark_name__in=['FileIO_rndrd', 'FileIO_seqrd'], then=Max('read_throughput_mb_ps')),
+                    default=Max('write_throughput_mb_ps')
+                )
+            )
+            for result in disk_results:
+                if result['benchmark_name'] == 'FileIO_rndrd':
+                    scores['randomReadDiskThroughput'] = result['score']
+                elif result['benchmark_name'] == 'FileIO_rndwr':
+                    scores['randomWriteDiskThroughput'] = result['score']
+                elif result['benchmark_name'] == 'FileIO_seqrd':
+                    scores['sequentialReadDiskThroughput'] = result['score']
+                elif result['benchmark_name'] == 'FileIO_seqwr':
+                    scores['sequentialWriteDiskThroughput'] = result['score']
+
+            # Network Benchmark
+            network_result = NetworkBenchmark.objects.filter(provider=provider).aggregate(score=Max('mbit_per_second'))
+            scores['networkDownloadSpeed'] = network_result['score']
+
+            # GPU Task
+            gpu_result = GPUTask.objects.filter(provider=provider).aggregate(score=Max('gpu_burn_gflops'))
+            scores['gpu_gflops_score'] = gpu_result['score']
+
+            # Success Rate
+            task_stats = TaskCompletion.objects.filter(provider=provider).aggregate(
+                successful=Count(Case(When(is_successful=True, then=1))),
+                total=Count('id')
+            )
+            scores['successRate'] = (task_stats['successful'] / task_stats['total'] * 100) if task_stats['total'] > 0 else None
+
+            # Ping
+            regions = ["europe", "asia", "us"]
+            ping_results = PingResult.objects.filter(
+                provider=provider,
+                region__in=regions
+            ).values('region', 'is_p2p').annotate(
+                avg_ping=Avg('ping_udp')
+            )
+
+            for result in ping_results:
+                region = result['region']
+                is_p2p = result['is_p2p']
+                avg_ping = result['avg_ping']
+                key = 'p2p' if is_p2p else 'non_p2p'
+                scores['ping'][region][key] = avg_ping
+
     except Provider.DoesNotExist:
         return JsonResponse({"error": "Provider not found"}, status=404)
 
-    scores = {}
-
-    # Uptime
-    scores['uptime'] = calculate_uptime(provider.node_id)
-
-    # CPU Multi-thread Score
-    scores['cpuMultiThreadScore'] = CpuBenchmark.objects.filter(
-        provider=provider,
-        benchmark_name="CPU Multi-thread Benchmark"
-    ).order_by('-created_at').values_list('events_per_second', flat=True).first()
-
-    # CPU Single-thread Score
-    scores['cpuSingleThreadScore'] = CpuBenchmark.objects.filter(
-        provider=provider,
-        benchmark_name="CPU Single-thread Benchmark"
-    ).order_by('-created_at').values_list('events_per_second', flat=True).first()
-
-    # Success Rate
-    successful_tasks = TaskCompletion.objects.filter(
-        provider=provider, is_successful=True).count()
-    total_tasks = TaskCompletion.objects.filter(provider=provider).count()
-    scores['successRate'] = (
-        successful_tasks / total_tasks * 100) if total_tasks > 0 else None
-
-    # Memory Benchmarks
-    scores['memorySeqRead'] = MemoryBenchmark.objects.filter(
-        provider=provider,
-        benchmark_name="Sequential_Read_Performance__Single_Thread_"
-    ).order_by('-created_at').values_list('throughput_mi_b_sec', flat=True).first()
-
-    scores['memorySeqWrite'] = MemoryBenchmark.objects.filter(
-        provider=provider,
-        benchmark_name="Sequential_Write_Performance__Single_Thread_"
-    ).order_by('-created_at').values_list('throughput_mi_b_sec', flat=True).first()
-
-    scores['memoryRandRead'] = MemoryBenchmark.objects.filter(
-        provider=provider,
-        benchmark_name="Random_Read_Performance__Multi_threaded_"
-    ).order_by('-created_at').values_list('throughput_mi_b_sec', flat=True).first()
-
-    scores['memoryRandWrite'] = MemoryBenchmark.objects.filter(
-        provider=provider,
-        benchmark_name="Random_Write_Performance__Multi_threaded_"
-    ).order_by('-created_at').values_list('throughput_mi_b_sec', flat=True).first()
-
-    # Disk Benchmarks
-    scores['randomReadDiskThroughput'] = DiskBenchmark.objects.filter(
-        provider=provider,
-        benchmark_name="FileIO_rndrd"
-    ).order_by('-created_at').values_list('read_throughput_mb_ps', flat=True).first()
-
-    scores['randomWriteDiskThroughput'] = DiskBenchmark.objects.filter(
-        provider=provider,
-        benchmark_name="FileIO_rndwr"
-    ).order_by('-created_at').values_list('write_throughput_mb_ps', flat=True).first()
-
-    scores['sequentialReadDiskThroughput'] = DiskBenchmark.objects.filter(
-        provider=provider,
-        benchmark_name="FileIO_seqrd"
-    ).order_by('-created_at').values_list('read_throughput_mb_ps', flat=True).first()
-
-    scores['sequentialWriteDiskThroughput'] = DiskBenchmark.objects.filter(
-        provider=provider,
-        benchmark_name="FileIO_seqwr"
-    ).order_by('-created_at').values_list('write_throughput_mb_ps', flat=True).first()
-
-    # Network Download Speed
-    scores['networkDownloadSpeed'] = NetworkBenchmark.objects.filter(
-        provider=provider
-    ).order_by('-created_at').values_list('mbit_per_second', flat=True).first()
-
-    # GPU Score
-    gpu_task = GPUTask.objects.filter(provider=provider).order_by('-created_at').first()
-    if gpu_task:
-        scores['gpu_gflops_score'] = gpu_task.gpu_burn_gflops
-    else:
-        scores['gpu_gflops_score'] = None
-
-    # Ping
-    regions = ["europe", "asia", "us"]
-    scores['ping'] = {}
-
-    # Fetch all relevant ping results in a single query
-    ping_results = PingResult.objects.filter(
-        provider=provider,
-        region__in=regions
-    ).order_by('-created_at').values('region', 'is_p2p', 'ping_udp')
-
-    # Process the results
-    ping_data = {}
-    for result in ping_results:
-        region = result['region']
-        is_p2p = result['is_p2p']
-        ping_udp = result['ping_udp']
-        
-        if region not in ping_data:
-            ping_data[region] = {'p2p': [], 'non_p2p': []}
-        
-        key = 'p2p' if is_p2p else 'non_p2p'
-        if len(ping_data[region][key]) < 5:
-            ping_data[region][key].append(ping_udp)
-
-    # Calculate averages and populate scores
-    for region in regions:
-        scores['ping'][region] = {
-            'p2p': sum(ping_data.get(region, {}).get('p2p', [0])) / len(ping_data.get(region, {}).get('p2p', [1])) if ping_data.get(region, {}).get('p2p') else None,
-            'non_p2p': sum(ping_data.get(region, {}).get('non_p2p', [0])) / len(ping_data.get(region, {}).get('non_p2p', [1])) if ping_data.get(region, {}).get('non_p2p') else None
-        }
     return JsonResponse({"node_id": node_id, "scores": scores})
 
 
