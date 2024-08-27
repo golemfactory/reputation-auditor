@@ -208,7 +208,7 @@ export class Golem {
         this.paymentService = new PaymentService(this.api, {
             logger: createLogger("golem-js:payment"),
             payment: {
-                network: process.env["GOLEM_PAYMENT_NETWORK"] ?? "polygon",
+                network: process.env["GOLEM_PAYMENT_NETWORK"] ?? "holesky",
             },
             eventTarget: config.eventTarget,
         })
