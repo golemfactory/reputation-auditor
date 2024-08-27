@@ -138,7 +138,7 @@ services:
             dockerfile: dockerfiles/Yagna
         image: reputation-celery-yagna:latest
         environment:
-            - REPLICA_INDEX=$${TASK_SLOT}
+            - REPLICA_INDEX={{.Task.Slot}}
         volumes:
             - "./golem-reputation-backend/reputation-backend:/reputation-backend/"
             - "./golem-reputation-backend/benchmark:/benchmark/"
