@@ -142,7 +142,7 @@ services:
         volumes:
             - "./golem-reputation-backend/reputation-backend:/reputation-backend/"
             - "./golem-reputation-backend/benchmark:/benchmark/"
-            - "./benchmarker-datadir:/root/.local/share/yagna/"
+            #- "./benchmarker-datadir:/root/.local/share/yagna/"
             #- "./key.json:/key.json"
         env_file:
             - ./.envs-dev/.django
