@@ -26,8 +26,15 @@ sleep 5
 # Calculate a delay factor (e.g., 2 seconds between each replica)
 DELAY_FACTOR=2
 
-# Calculate the delay for this specific replica
-DELAY=$((REPLICA_INDEX * DELAY_FACTOR))
+# Check if REPLICA_INDEX is set and is a number
+if [ -n "$REPLICA_INDEX" ] && [ "$REPLICA_INDEX" -eq "$REPLICA_INDEX" ] 2>/dev/null; then
+    # Calculate the delay for this specific replica
+    DELAY=$((REPLICA_INDEX * DELAY_FACTOR))
+else
+    # Default to 0 if REPLICA_INDEX is not set or not a number
+    DELAY=0
+    REPLICA_INDEX=0
+fi
 
 # Debug output
 echo "Replica Index: $REPLICA_INDEX"
@@ -37,6 +44,8 @@ echo "Calculated Delay: $DELAY seconds"
 echo "Sleeping for $DELAY seconds..."
 sleep $DELAY
 echo "Sleep completed."
+yagna payment fund
+
 yagna payment fund
 
 # Check if "/key.json" exists
