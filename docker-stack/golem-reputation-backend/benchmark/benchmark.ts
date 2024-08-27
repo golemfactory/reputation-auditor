@@ -194,20 +194,20 @@ export async function runProofOfWork(numOfChecks: number, pricePerHour: null | n
                         if (!memory) {
                             throw new Error("Benchmark failed")
                         }
-                        const cpu = await benchmarkTest(ctx, providerId, "cpu", `/benchmark-cpu.sh`, benchmarkCpuFiles, taskId)
-                        if (!cpu) {
-                            throw new Error("Benchmark failed on CPU speed test")
-                        }
+                        // const cpu = await benchmarkTest(ctx, providerId, "cpu", `/benchmark-cpu.sh`, benchmarkCpuFiles, taskId)
+                        // if (!cpu) {
+                        //     throw new Error("Benchmark failed on CPU speed test")
+                        // }
 
-                        const disk = await benchmarkTest(ctx, providerId, "disk", `/benchmark-disk.sh`, benchmarkDiskFiles, taskId)
+                        // const disk = await benchmarkTest(ctx, providerId, "disk", `/benchmark-disk.sh`, benchmarkDiskFiles, taskId)
 
-                        if (!disk) {
-                            throw new Error("Benchmark failed on disk speed test")
-                        }
-                        const networkSpeed = await benchmarkTest(ctx, providerId, "network", `/download.sh 10`, networkSpeedFiles, taskId)
-                        if (!networkSpeed) {
-                            throw new Error("Benchmark failed on network speed test")
-                        }
+                        // if (!disk) {
+                        //     throw new Error("Benchmark failed on disk speed test")
+                        // }
+                        // const networkSpeed = await benchmarkTest(ctx, providerId, "network", `/download.sh 10`, networkSpeedFiles, taskId)
+                        // if (!networkSpeed) {
+                        //     throw new Error("Benchmark failed on network speed test")
+                        // }
 
                         if (!failedProvidersIds.includes(providerId)) {
                             taskStatuses.push({
