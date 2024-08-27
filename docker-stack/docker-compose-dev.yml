@@ -56,7 +56,7 @@ services:
                 - traefik.http.services.django.loadbalancer.server.port=8002
                 - traefik.http.routers.django.service=django@docker
                 - traefik.docker.network=reputation
-            replicas: 1
+            replicas: 3
             update_config:
                 parallelism: 1
                 failure_action: rollback
@@ -133,7 +133,7 @@ services:
             [
                 "/bin/sh",
                 "-c",
-                "/wait-for-it.sh postgres:5432 -- /reputation-backend/start.sh; cd /benchmark; npm i && npm run benchmark-scheduler -- -b vm",
+                "/wait-for-it.sh postgres:5432 -- /reputation-backend/start.sh; cd /benchmark; npm i && npm run benchmark-scheduler -- -b vm -d",
             ]
         build:
             context: golem-reputation-backend/.
@@ -153,7 +153,7 @@ services:
             retries: 3
             start_period: 15s
         deploy:
-            replicas: 1
+            replicas: 50
             update_config:
                 parallelism: 1
                 failure_action: rollback
