@@ -23,6 +23,20 @@ echo "Starting Yagna"
 export YA_NET_BIND_URL=udp://0.0.0.0:11500
 YAGNA_AUTOCONF_APPKEY=reputation /root/.local/bin/yagna service run >/dev/null 2>&1 &
 sleep 5
+# Calculate a delay factor (e.g., 2 seconds between each replica)
+DELAY_FACTOR=2
+
+# Calculate the delay for this specific replica
+DELAY=$((REPLICA_INDEX * DELAY_FACTOR))
+
+# Debug output
+echo "Replica Index: $REPLICA_INDEX"
+echo "Calculated Delay: $DELAY seconds"
+
+# Sleep for the calculated delay
+echo "Sleeping for $DELAY seconds..."
+sleep $DELAY
+echo "Sleep completed."
 yagna payment fund
 
 # Check if "/key.json" exists

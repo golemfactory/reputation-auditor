@@ -130,15 +130,17 @@ services:
             - reputation
     benchmarker_worker:
         command:
-            [
-                "/bin/sh",
-                "-c",
-                "/wait-for-it.sh postgres:5432 -- /reputation-backend/start.sh; cd /benchmark; npm i && npm run benchmark-scheduler -- -b vm -d",
-            ]
+        [
+            "/bin/sh",
+            "-c",
+            "/wait-for-it.sh postgres:5432 -- /reputation-backend/start.sh; cd /benchmark; npm i && npm run benchmark-scheduler -- -b vm -d",
+        ]
         build:
             context: golem-reputation-backend/.
             dockerfile: dockerfiles/Yagna
         image: reputation-celery-yagna:latest
+        environment:
+            - REPLICA_INDEX={{ .Task.Slot }}
         volumes:
             - "./golem-reputation-backend/reputation-backend:/reputation-backend/"
             - "./golem-reputation-backend/benchmark:/benchmark/"
