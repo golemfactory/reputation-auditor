@@ -24,7 +24,7 @@ export YA_NET_BIND_URL=udp://0.0.0.0:11500
 YAGNA_AUTOCONF_APPKEY=reputation /root/.local/bin/yagna service run >/dev/null 2>&1 &
 sleep 5
 # Calculate a delay factor (e.g., 2 seconds between each replica)
-DELAY_FACTOR=2
+DELAY_FACTOR=5
 
 # Check if REPLICA_INDEX is set and is a number
 if [ -n "$REPLICA_INDEX" ] && [ "$REPLICA_INDEX" -eq "$REPLICA_INDEX" ] 2>/dev/null; then
