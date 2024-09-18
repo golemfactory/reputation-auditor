@@ -126,9 +126,12 @@ def cache_provider_success_ratio():
 
     # Calculate success ratios
     success_ratio_data = {
-        '100-80': 0,
-        '80-40': 0,
-        '40-0': 0
+        '100-90': 0,
+        '90-80': 0,
+        '80-60': 0,
+        '60-40': 0,
+        '40-20': 0,
+        '20-0': 0
     }
 
     for provider_id in provider_ids:
@@ -140,12 +143,18 @@ def cache_provider_success_ratio():
 
         if provider and provider.total_count > 0:
             success_ratio = provider.success_count / provider.total_count * 100
-            if success_ratio >= 80:
-                success_ratio_data['100-80'] += 1
+            if success_ratio >= 90:
+                success_ratio_data['100-90'] += 1
+            elif success_ratio >= 80:
+                success_ratio_data['90-80'] += 1
+            elif success_ratio >= 60:
+                success_ratio_data['80-60'] += 1
             elif success_ratio >= 40:
-                success_ratio_data['80-40'] += 1
+                success_ratio_data['60-40'] += 1
+            elif success_ratio >= 20:
+                success_ratio_data['40-20'] += 1
             else:
-                success_ratio_data['40-0'] += 1
+                success_ratio_data['20-0'] += 1
 
     redis_client.set('stats_provider_success_ratio',
                      json.dumps(success_ratio_data))
