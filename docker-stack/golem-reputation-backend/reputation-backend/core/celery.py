@@ -60,13 +60,13 @@ def setup_periodic_tasks(sender, **kwargs):
         options={"queue": "default", "routing_key": "default"},
     )
     sender.add_periodic_task(
-        20.0,
+        120.0,
         get_blacklisted_providers.s(),
         queue="default",
         options={"queue": "default", "routing_key": "default"},
     )
     sender.add_periodic_task(
-        20.0,
+        120.0,
         get_blacklisted_operators.s(),
         queue="default",
         options={"queue": "default", "routing_key": "default"},
