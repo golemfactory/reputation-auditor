@@ -48,7 +48,7 @@ def setup_periodic_tasks(sender, **kwargs):
         options={"queue": "uptime", "routing_key": "uptime"},
     )
     sender.add_periodic_task(
-        60.0,
+        300.0,
         update_provider_scores.s(network="mainnet"),
         queue="default",
         options={"queue": "default", "routing_key": "default"},
