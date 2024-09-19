@@ -25,7 +25,7 @@ def penalty_weight(deviation):
 def calculate_uptime(node_id, node=None):
     if node is None:
         node = Provider.objects.get(node_id=node_id)
-    statuses = NodeStatusHistory.objects.filter(provider=node).order_by("timestamp")
+    statuses = NodeStatusHistory.objects.filter(node_id=node_id).order_by("timestamp")
 
     online_duration = timedelta(0)
     last_online_time = None

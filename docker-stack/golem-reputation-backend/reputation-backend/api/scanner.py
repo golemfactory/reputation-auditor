@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import redis
+import requests
 import asyncio
 import csv
 import json
@@ -24,18 +25,12 @@ r = redis.Redis(host='redis', port=6379, db=0)
 
 @app.task(queue='default', options={'queue': 'default', 'routing_key': 'default'})
 def update_providers_info(node_props):
-    node_ids = [prop['node_id'] for prop in node_props]
-    existing_providers = Provider.objects.filter(node_id__in=node_ids)
-    existing_providers_dict = {
-        provider.node_id: provider for provider in existing_providers}
-
-    create_batch = []
-    update_batch = []
-
+    provider_data = []
     for props in node_props:
         prop_data = {key: value for key, value in props.items() if key.startswith(
             "golem.com.payment.platform.") and key.endswith(".address")}
-        provider_data = {
+        provider_data.append({
+            "node_id": props['node_id'],
             "payment_addresses": prop_data,
             "network": 'testnet' if any(key in TESTNET_KEYS for key in props.keys()) else 'mainnet',
             "cores": props.get("golem.inf.cpu.cores"),
@@ -46,20 +41,32 @@ def update_providers_info(node_props):
             "threads": props.get("golem.inf.cpu.threads"),
             "storage": props.get("golem.inf.storage.gib"),
             "name": props.get("golem.node.id.name"),
-        }
+        })
 
-        issuer_id = props['node_id']
-        if issuer_id in existing_providers_dict:
-            provider_instance = existing_providers_dict[issuer_id]
-            for key, value in provider_data.items():
-                setattr(provider_instance, key, value)
-            update_batch.append(provider_instance)
+    node_ids = [data['node_id'] for data in provider_data]
+    existing_providers = {
+        provider.node_id: provider
+        for provider in Provider.objects.filter(node_id__in=node_ids)
+    }
+
+    providers_to_create = []
+    providers_to_update = []
+
+    for data in provider_data:
+        if data['node_id'] in existing_providers:
+            provider = existing_providers[data['node_id']]
+            for key, value in data.items():
+                setattr(provider, key, value)
+            providers_to_update.append(provider)
         else:
-            create_batch.append(Provider(node_id=issuer_id, **provider_data))
+            providers_to_create.append(Provider(**data))
 
-    Provider.objects.bulk_create(create_batch, ignore_conflicts=True)
+    Provider.objects.bulk_create(providers_to_create, ignore_conflicts=True)
     Provider.objects.bulk_update(
-        update_batch, [field for field in provider_data.keys() if field != 'node_id'])
+        providers_to_update,
+        fields=[field for field in provider_data[0].keys() if field !=
+                'node_id']
+    )
 
 
 TESTNET_KEYS = [
@@ -76,81 +83,33 @@ sys.path.append(str(examples_dir))
 from .utils import build_parser, print_env_info, format_usage  # noqa: E402
 
 
-def update_nodes_status(provider_id, is_online_now):
-    provider, created = Provider.objects.get_or_create(node_id=provider_id)
-
-    # Get the latest status from Redis
-    latest_status = r.get(f"provider:{provider_id}:status")
-
-    if latest_status is None:
-        # Status not found in Redis, fetch the latest status from the database
-        last_status = NodeStatusHistory.objects.filter(
-            provider=provider).last()
-        if not last_status or last_status.is_online != is_online_now:
-            # Create a new status entry if there's a change in status
-            NodeStatusHistory.objects.create(
-                provider=provider, is_online=is_online_now)
-            provider.online = is_online_now
-            provider.save()
-    else:
-        # Compare the latest status from Redis with the current status
-        if latest_status.decode() != str(is_online_now):
-            # Status has changed, update the database and Node.online field
-            NodeStatusHistory.objects.create(
-                provider=provider, is_online=is_online_now)
-            provider.online = is_online_now
-            provider.save()
-
-    # Store the current status in Redis for future lookups
-    r.set(f"provider:{provider_id}:status", str(is_online_now))
-
-
-@app.task(queue='uptime', options={'queue': 'uptime', 'routing_key': 'uptime'})
-def update_nodes_data(node_props):
-    r = redis.Redis(host='redis', port=6379, db=0)
-
-    for props in node_props:
-        issuer_id = props['node_id']
-        is_online_now = check_node_status(issuer_id)
-        print(f"Updating NodeStatus for {issuer_id} with is_online_now={is_online_now}")
-        try:
-            update_nodes_status(issuer_id, is_online_now)
-        except Exception as e:
-            print(f"Error updating NodeStatus for {issuer_id}: {e}")
-
-    provider_ids_in_props = {props['node_id'] for props in node_props}
-    previously_online_providers_ids = Provider.objects.filter(
-        nodestatushistory__is_online=True
-    ).distinct().values_list('node_id', flat=True)
-
-    provider_ids_not_in_scan = set(
-        previously_online_providers_ids) - provider_ids_in_props
-
-    for issuer_id in provider_ids_not_in_scan:
-        is_online_now = check_node_status(issuer_id)
-        print(f"Verifying NodeStatus for {issuer_id} with is_online_now={is_online_now}")
-        try:
-            update_nodes_status(issuer_id, is_online_now)
-        except Exception as e:
-            print(f"Error verifying/updating NodeStatus for {issuer_id}: {e}")
-
-
 def check_node_status(issuer_id):
+    node_id_no_prefix = issuer_id[2:] if issuer_id.startswith(
+        '0x') else issuer_id
+    url = f"http://yacn2.dev.golem.network:9000/nodes/{node_id_no_prefix}"
     try:
-        process = subprocess.run(
-            ["yagna", "net", "find", issuer_id],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=5  # 5-second timeout for the subprocess
-        )
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        node_key = issuer_id.lower()
+        node_info = data.get(node_key)
 
-        # Process finished, return True if it was successful and "seen:" is in the output
-        return process.returncode == 0 and "seen:" in process.stdout.decode()
-    except subprocess.TimeoutExpired as e:
-        print("Timeout reached while checking node status", e)
+        if node_info:
+            if isinstance(node_info, list):
+                if node_info == [] or node_info == [None]:
+                    return False
+                else:
+                    return any('seen' in item for item in node_info if item)
+            else:
+                return False
+        else:
+            return False
+    except requests.exceptions.RequestException as e:
+        print(
+            f"HTTP request exception when checking node status for {issuer_id}: {e}")
         return False
     except Exception as e:
-        print(f"Unexpected error checking node status: {e}")
+        print(f"Unexpected error checking node status for {issuer_id}: {e}")
         return False
 
 
@@ -200,5 +159,4 @@ async def monitor_nodes_status(subnet_tag: str = "public"):
         print("Scan timeout reached")
 
     # Delay update_nodes_data call using Celery
-    update_nodes_data.delay(node_props)
     update_providers_info.delay(node_props)

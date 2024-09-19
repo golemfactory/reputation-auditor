@@ -70,9 +70,8 @@ def update_provider_scores(network):
     r = redis.Redis(host='redis', port=6379, db=0)
     ten_days_ago = timezone.now() - timedelta(days=10)
     recent_online_providers = NodeStatusHistory.objects.filter(
-        is_online=True).order_by('provider', '-timestamp').distinct('provider')
-    online_provider_ids = [
-        status.provider_id for status in recent_online_providers]
+        is_online=True).order_by('node_id', '-timestamp').distinct('node_id')
+    online_provider_ids = [status.node_id for status in recent_online_providers]
     providers = Provider.objects.filter(node_id__in=online_provider_ids, network=network).annotate(
         success_count=Count('taskcompletion', filter=Q(
             taskcompletion__is_successful=True, taskcompletion__timestamp__gte=ten_days_ago)),
@@ -241,7 +240,7 @@ def get_blacklisted_operators():
         latest=Max('timestamp', filter=Q(is_online=True))
     ).filter(
         timestamp=F('latest'), is_online=True
-    ).values_list('provider_id', flat=True)
+    ).values_list('node_id', flat=True)
 
     providers = Provider.objects.filter(
         node_id__in=latest_online_statuses
@@ -407,3 +406,72 @@ def delete_old_ping_results():
     # Optionally, you can log the number of deleted records or return it
     print(
         f"Deleted {count_ping_results} PingResult records older than 30 days.")
+    
+import requests 
+from .utils import check_node_status
+from django.db import transaction
+r = redis.Redis(host='redis', port=6379, db=0)
+
+@app.task
+def fetch_and_update_relay_nodes_online_status():
+    base_url = "http://yacn2.dev.golem.network:9000/nodes/"
+    current_online_nodes = set()
+    nodes_to_update = []
+
+    for prefix in range(256):
+        try:
+            response = requests.get(f"{base_url}{prefix:02x}", timeout=5)
+            response.raise_for_status()
+            data = response.json()
+
+            for node_id, sessions in data.items():
+                node_id = node_id.strip().lower()
+                is_online = bool(sessions) and any('seen' in item for item in sessions if item)
+                current_online_nodes.add(node_id)
+                nodes_to_update.append((node_id, is_online))
+
+        except requests.RequestException as e:
+            print(f"Error fetching data for prefix {prefix:02x}: {e}")
+
+    # Bulk update node statuses
+    bulk_update_node_statuses.delay(nodes_to_update)
+
+    # Check providers that were previously online but not found in the current scan
+    previously_online = set(NodeStatusHistory.objects.filter(
+        is_online=True
+    ).order_by('node_id', '-timestamp').distinct('node_id').values_list('node_id', flat=True))
+
+    missing_nodes = previously_online - current_online_nodes
+    if missing_nodes:
+        check_missing_nodes.delay(list(missing_nodes))
+
+@app.task
+def bulk_update_node_statuses(nodes_data):
+    status_history_to_create = []
+    redis_updates = {}
+
+    for node_id, is_online in nodes_data:
+        latest_status = r.get(f"provider:{node_id}:status")
+        
+        if latest_status is None or latest_status.decode() != str(is_online):
+            status_history_to_create.append(
+                NodeStatusHistory(node_id=node_id, is_online=is_online)
+            )
+            redis_updates[f"provider:{node_id}:status"] = str(is_online)
+            
+
+    if status_history_to_create:
+        with transaction.atomic():
+            NodeStatusHistory.objects.bulk_create(status_history_to_create)
+
+    if redis_updates:
+        r.mset(redis_updates)
+
+@app.task
+def check_missing_nodes(missing_nodes):
+    nodes_to_update = []
+    for node_id in missing_nodes:
+        is_online = check_node_status(node_id)
+        nodes_to_update.append((node_id, is_online))
+    
+    bulk_update_node_statuses(nodes_to_update)

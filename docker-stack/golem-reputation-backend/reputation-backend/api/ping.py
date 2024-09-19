@@ -10,14 +10,14 @@ from asgiref.sync import sync_to_async
 async def async_fetch_node_ids():
     # Define the synchronous part as an inner function
     def get_node_ids():
-        # Fetch the latest status for each provider and filter those that are online
+        # Fetch the latest status for each node_id and filter those that are online
         latest_statuses = NodeStatusHistory.objects.filter(
-            provider_id__in=NodeStatusHistory.objects.order_by(
-                'provider', '-timestamp').distinct('provider').values_list('provider_id', flat=True)
-        ).order_by('provider', '-timestamp').distinct('provider')
+            node_id__in=NodeStatusHistory.objects.order_by(
+                'node_id', '-timestamp').distinct('node_id').values_list('node_id', flat=True)
+        ).order_by('node_id', '-timestamp').distinct('node_id')
 
-        # Return provider IDs where the latest status is online
-        return [status.provider.node_id for status in latest_statuses if status.is_online]
+        # Return node_ids where the latest status is online
+        return [status.node_id for status in latest_statuses if status.is_online]
 
     # Use sync_to_async to convert it and immediately invoke
     node_ids = await sync_to_async(get_node_ids, thread_sensitive=True)()

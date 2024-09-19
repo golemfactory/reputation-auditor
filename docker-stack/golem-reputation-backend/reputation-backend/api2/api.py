@@ -176,7 +176,7 @@ def filter_providers(
     ).annotate(
         latest_status=Subquery(
             NodeStatusHistory.objects.filter(
-                provider=OuterRef('pk')
+                node_id=OuterRef('node_id')
             ).order_by('-timestamp').values('is_online')[:1]
         )
     ).filter(latest_status=True)
@@ -868,7 +868,7 @@ def list_all_provider_scores(request):
 def get_score_overview(request):
     # Filter providers whose latest NodeStatusHistory is_online=True
     latest_status_subquery = NodeStatusHistory.objects.filter(
-        provider=OuterRef('pk')
+        node_id=OuterRef('node_id')
     ).order_by('-timestamp').values('is_online')[:1]
 
     providers = Provider.objects.annotate(
@@ -878,7 +878,7 @@ def get_score_overview(request):
     # Calculate uptime for each provider
     def calculate_uptime(provider):
         statuses = NodeStatusHistory.objects.filter(
-            provider=provider).order_by('timestamp')
+            node_id=provider.node_id).order_by('timestamp')
 
         online_duration = timedelta(0)
         last_online_time = None

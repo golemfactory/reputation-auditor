@@ -263,14 +263,14 @@ class PingResult(models.Model):
 
 
 class NodeStatusHistory(models.Model):
-    provider = models.ForeignKey(Provider, on_delete=models.CASCADE)
+    node_id = models.CharField(max_length=42)
     is_online = models.BooleanField()
     timestamp = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.provider.node_id} - {'Online' if self.is_online else 'Offline'} at {self.timestamp}"
+        return f"{self.node_id} - {'Online' if self.is_online else 'Offline'} at {self.timestamp}"
 
     class Meta:
         indexes = [
-            models.Index(fields=["provider", "timestamp"]),
+            models.Index(fields=["node_id", "timestamp"]),
         ]

@@ -106,6 +106,10 @@ async def ping_provider(provider_id):
                 results.append(result)
             else:
                 print("ERROR pinging", stderr.decode())
+                # If you detect the critical error related to `yagna.sock`, exit the script
+                if "No such file or directory" in stderr.decode():
+                    print("Critical error: yagna.sock is unavailable, exiting...")
+                    os._exit(1)  # This will exit the script and stop the container
                 return False
 
         if len(results) == 2:
@@ -128,6 +132,7 @@ async def ping_provider(provider_id):
     except asyncio.TimeoutError as e:
         print("Timeout reached while checking node status", e)
         return False
+
 
 # Process each provider ID and send ping results in chunks
 

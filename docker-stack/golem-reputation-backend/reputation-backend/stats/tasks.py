@@ -70,18 +70,18 @@ def populate_daily_provider_stats():
 
 @app.task
 def cache_provider_uptime():
-
     # Get the latest online status for each provider
     latest_statuses = NodeStatusHistory.objects.filter(
         timestamp=Subquery(
-            NodeStatusHistory.objects.filter(provider=OuterRef('provider'))
+            NodeStatusHistory.objects.filter(node_id=OuterRef('node_id'))
             .order_by('-timestamp')
             .values('timestamp')[:1]
         )
     )
 
-    provider_ids = [status.provider_id for status in latest_statuses if status.is_online]
-
+    # Get online node_ids that also exist in the Provider model
+    online_node_ids = [status.node_id for status in latest_statuses if status.is_online]
+    existing_providers = Provider.objects.filter(node_id__in=online_node_ids).values_list('node_id', flat=True)
 
     uptime_data = {
         '100-90': 0,
@@ -92,20 +92,23 @@ def cache_provider_uptime():
         '20-0': 0
     }
     
-    for provider_id in provider_ids:
-        uptime_percentage = calculate_uptime(provider_id)
-        if uptime_percentage >= 90:
-            uptime_data['100-90'] += 1
-        elif uptime_percentage >= 80:
-            uptime_data['90-80'] += 1
-        elif uptime_percentage >= 60:
-            uptime_data['80-60'] += 1
-        elif uptime_percentage >= 40:
-            uptime_data['60-40'] += 1
-        elif uptime_percentage >= 20:
-            uptime_data['40-20'] += 1
-        else:
-            uptime_data['20-0'] += 1
+    for provider_id in existing_providers:
+        try:
+            uptime_percentage = calculate_uptime(provider_id)
+            if uptime_percentage >= 90:
+                uptime_data['100-90'] += 1
+            elif uptime_percentage >= 80:
+                uptime_data['90-80'] += 1
+            elif uptime_percentage >= 60:
+                uptime_data['80-60'] += 1
+            elif uptime_percentage >= 40:
+                uptime_data['60-40'] += 1
+            elif uptime_percentage >= 20:
+                uptime_data['40-20'] += 1
+            else:
+                uptime_data['20-0'] += 1
+        except Exception as e:
+            print(f"Error calculating uptime for provider {provider_id}: {str(e)}")
 
     redis_client.set('stats_provider_uptime', json.dumps(uptime_data))
 
@@ -115,14 +118,16 @@ def cache_provider_success_ratio():
     # Get the latest online status for each provider
     latest_statuses = NodeStatusHistory.objects.filter(
         timestamp=Subquery(
-            NodeStatusHistory.objects.filter(provider=OuterRef('provider'))
+            NodeStatusHistory.objects.filter(node_id=OuterRef('node_id'))
             .order_by('-timestamp')
             .values('timestamp')[:1]
         )
     )
 
-    provider_ids = [status.provider_id for status in latest_statuses if status.is_online]
+    online_node_ids = [status.node_id for status in latest_statuses if status.is_online]
 
+    # Get providers that exist in the Provider model and are online
+    existing_providers = Provider.objects.filter(node_id__in=online_node_ids)
 
     # Calculate success ratios
     success_ratio_data = {
@@ -134,15 +139,12 @@ def cache_provider_success_ratio():
         '20-0': 0
     }
 
-    for provider_id in provider_ids:
-        provider = Provider.objects.filter(node_id=provider_id).annotate(
-            success_count=Count('taskcompletion', filter=Q(
-                taskcompletion__is_successful=True)),
-            total_count=Count('taskcompletion'),
-        ).first()
-
-        if provider and provider.total_count > 0:
-            success_ratio = provider.success_count / provider.total_count * 100
+    for provider in existing_providers.annotate(
+        success_count=Count('taskcompletion', filter=Q(taskcompletion__is_successful=True)),
+        total_count=Count('taskcompletion')
+    ):
+        if provider.total_count > 0:
+            success_ratio = (provider.success_count / provider.total_count) * 100
             if success_ratio >= 90:
                 success_ratio_data['100-90'] += 1
             elif success_ratio >= 80:
@@ -156,8 +158,11 @@ def cache_provider_success_ratio():
             else:
                 success_ratio_data['20-0'] += 1
 
-    redis_client.set('stats_provider_success_ratio',
-                     json.dumps(success_ratio_data))
+    redis_client.set('stats_provider_success_ratio', json.dumps(success_ratio_data))
+    
+
+
+    
 
 
 from django.db.models import Max, F, Subquery, OuterRef, Prefetch
