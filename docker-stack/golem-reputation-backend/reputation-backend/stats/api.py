@@ -542,3 +542,105 @@ def get_gpu_performance_ranking(request):
         return JsonResponse(json.loads(cached_data), safe=False)
     else:
         return JsonResponse({"error": "GPU performance ranking data not available"}, status=503)
+    
+from api.models import NodeStatusHistory, Provider
+from datetime import datetime, timedelta
+from .utils import process_downtime
+from api.scoring import calculate_uptime
+@api.get("/provider/uptime/{node_id}", tags=["Stats"])
+def get_provider_uptime(request, node_id: str):
+    node = Provider.objects.filter(node_id=node_id).first()
+    if not node:
+        return JsonResponse(
+            {
+                "first_seen": None,
+                "data": [],
+                "status": "offline",
+            },
+            status=404,
+        )
+
+    current_time = timezone.now()
+    thirty_days_ago = current_time - timedelta(days=30)
+
+    statuses = NodeStatusHistory.objects.filter(
+        node_id=node_id,
+        timestamp__gte=thirty_days_ago
+    ).order_by("timestamp")
+
+    response_data = []
+    last_offline_timestamp = None
+
+    for day_offset in range(30):
+        day = (current_time - timedelta(days=day_offset)).date()
+        day_start = timezone.make_aware(datetime.combine(day, datetime.min.time()))
+        day_end = day_start + timedelta(days=1)
+        data_points_for_day = statuses.filter(
+            timestamp__range=(day_start, day_end)
+        ).distinct("timestamp")
+
+        if data_points_for_day.exists():
+            online_count = data_points_for_day.filter(is_online=True).count()
+            offline_count = data_points_for_day.filter(is_online=False).count()
+            if online_count == 0:
+                status = "offline"
+            elif offline_count == 0:
+                status = "online"
+            else:
+                status = "outage"
+
+            downtime_periods = []
+            for point in data_points_for_day:
+                if not point.is_online:
+                    if last_offline_timestamp is None:
+                        last_offline_timestamp = point.timestamp
+                else:
+                    if last_offline_timestamp is not None:
+                        downtime_period = process_downtime(
+                            last_offline_timestamp, point.timestamp
+                        )
+                        downtime_periods.append(downtime_period)
+                        last_offline_timestamp = None
+
+            response_data.append(
+                {
+                    "date": day.strftime("%d %B, %Y"),
+                    "status": status,
+                    "downtimes": downtime_periods,
+                }
+            )
+        else:
+            # If the node was created after this day, mark as "unregistered"
+            if day < node.created_at.date():
+                status = "unregistered"
+            else:
+                # Infer status from last known status
+                last_known_status = statuses.filter(timestamp__lt=day_start).last()
+                status = "online" if last_known_status and last_known_status.is_online else "offline"
+
+            response_data.append(
+                {
+                    "date": day.strftime("%d %B, %Y"),
+                    "status": status,
+                    "downtimes": [],
+                }
+            )
+
+    # Handling ongoing downtime
+    if last_offline_timestamp is not None:
+        ongoing_downtime = process_downtime(last_offline_timestamp, current_time)
+        response_data[0]["downtimes"].append(ongoing_downtime)
+
+    # Reverse the list so that the most recent day is first
+    response_data.reverse()
+
+    latest_status = statuses.last()
+
+    return JsonResponse(
+        {
+            "first_seen": node.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "uptime_percentage": calculate_uptime(node_id, node),
+            "data": response_data,
+            "current_status": "online" if latest_status and latest_status.is_online else "offline",
+        }
+    )
