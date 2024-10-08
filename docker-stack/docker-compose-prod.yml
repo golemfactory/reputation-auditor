@@ -98,9 +98,9 @@ services:
             - ./.envs/.django
         command: ["/bin/sh", "-c", "/wait-for-it.sh ${POSTGRES_DB} -- celery -A core worker -l INFO -Q default"]
         deploy:
-            replicas: 1
+            replicas: 5
             update_config:
-                parallelism: 1
+                parallelism: 5
                 failure_action: rollback
                 delay: 2s
             restart_policy:
