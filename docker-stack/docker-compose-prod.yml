@@ -54,19 +54,18 @@ services:
         deploy:
             labels:
                 - traefik.enable=true
-                - "traefik.http.routers.django.rule=Host(${DJANGO_HOST})"
+                - "traefik.http.routers.django.rule=Host(`reputation.golem.network`) || Host(`reputation.dev-test.golem.network`)"
                 - traefik.http.routers.django.entrypoints=web
                 - traefik.http.services.django.loadbalancer.server.port=8002
                 - traefik.http.routers.django.service=django@docker
                 - traefik.docker.network=reputation
                 - traefik.http.routers.django.tls.certresolver=letsencryptresolver
-                - "traefik.http.routers.django-web-secure.rule=Host(${DJANGO_HOST})"
+                - "traefik.http.routers.django-web-secure.rule=Host(`reputation.golem.network`) || Host(`reputation.dev-test.golem.network`)"
                 - traefik.http.routers.django-web-secure.tls=true
                 - traefik.http.routers.django-web-secure.entrypoints=web-secure
                 - traefik.http.middlewares.django_compress.compress=true
                 - traefik.http.routers.django-web-secure.middlewares=django_compress
                 - traefik.http.routers.django.middlewares=django_compress
-
             replicas: 3
             update_config:
                 parallelism: 1
