@@ -103,21 +103,15 @@ services:
             - reputation
     uptime_worker:
         command:
-            ["/bin/sh", "-c", "/wait-for-it.sh postgres:5432 -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q uptime -c 1"]
+            ["/bin/sh", "-c", "/wait-for-it.sh postgres:5432 -- python manage.py relay_monitor"]
         build:
             context: golem-reputation-backend/.
-            dockerfile: dockerfiles/Yagna
-        image: reputation-celery-yagna:latest
+            dockerfile: dockerfiles/Celery
+        image: reputation-celery:latest
         volumes:
             - "./golem-reputation-backend/reputation-backend:/reputation-backend/"
         env_file:
             - ./.envs-dev/.django
-        healthcheck:
-            test: /check_yagna.sh || exit 1
-            interval: 15s
-            timeout: 5s
-            retries: 3
-            start_period: 15s
         deploy:
             replicas: 1
             update_config:

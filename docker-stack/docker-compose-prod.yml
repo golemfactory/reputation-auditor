@@ -104,7 +104,7 @@ services:
                 failure_action: rollback
                 delay: 2s
             restart_policy:
-                condition: on-failure
+                condition: any
         networks:
             - reputation
     uptime_worker:
@@ -112,17 +112,11 @@ services:
             [
                 "/bin/sh",
                 "-c",
-                "/wait-for-it.sh ${POSTGRES_DB} -- /reputation-backend/start.sh; celery -A core worker -l INFO -Q uptime -c 1",
+                "/wait-for-it.sh ${POSTGRES_DB} -- python manage.py relay_monitor",
             ]
-        image: ghcr.io/golemfactory/golem-reputation-backend-celery-yagna:latest
+        image: ghcr.io/golemfactory/golem-reputation-backend-celery:latest
         env_file:
             - ./.envs/.django
-        healthcheck:
-            test: /check_yagna.sh || exit 1
-            interval: 15s
-            timeout: 5s
-            retries: 3
-            start_period: 15s
         deploy:
             replicas: 1
             update_config:
@@ -200,7 +194,7 @@ services:
                 failure_action: rollback
                 delay: 10s
             restart_policy:
-                condition: on-failure
+                condition: any
         networks:
             - reputation
 

@@ -413,65 +413,26 @@ from django.db import transaction
 r = redis.Redis(host='redis', port=6379, db=0)
 
 @app.task
-def fetch_and_update_relay_nodes_online_status():
-    base_url = "http://yacn2.dev.golem.network:9000/nodes/"
-    current_online_nodes = set()
-    nodes_to_update = []
-
-    for prefix in range(256):
-        try:
-            response = requests.get(f"{base_url}{prefix:02x}", timeout=5)
-            response.raise_for_status()
-            data = response.json()
-
-            for node_id, sessions in data.items():
-                node_id = node_id.strip().lower()
-                is_online = bool(sessions) and any('seen' in item for item in sessions if item)
-                current_online_nodes.add(node_id)
-                nodes_to_update.append((node_id, is_online))
-
-        except requests.RequestException as e:
-            print(f"Error fetching data for prefix {prefix:02x}: {e}")
-
-    # Bulk update node statuses
-    bulk_update_node_statuses.delay(nodes_to_update)
-
-    # Check providers that were previously online but not found in the current scan
-    previously_online = set(NodeStatusHistory.objects.filter(
-        is_online=True
-    ).order_by('node_id', '-timestamp').distinct('node_id').values_list('node_id', flat=True))
-
-    missing_nodes = previously_online - current_online_nodes
-    if missing_nodes:
-        check_missing_nodes.delay(list(missing_nodes))
-
-@app.task
 def bulk_update_node_statuses(nodes_data):
     status_history_to_create = []
-    redis_updates = {}
 
-    for node_id, is_online in nodes_data:
-        latest_status = r.get(f"provider:{node_id}:status")
-        
-        if latest_status is None or latest_status.decode() != str(is_online):
+    with transaction.atomic():
+        for node_id, is_online in nodes_data:
+
             status_history_to_create.append(
                 NodeStatusHistory(node_id=node_id, is_online=is_online)
             )
-            redis_updates[f"provider:{node_id}:status"] = str(is_online)
-            
 
-    if status_history_to_create:
-        with transaction.atomic():
-            NodeStatusHistory.objects.bulk_create(status_history_to_create)
+        # Bulk create status history
+        NodeStatusHistory.objects.bulk_create(status_history_to_create)
 
-    if redis_updates:
-        r.mset(redis_updates)
+        #Clean up duplicate consecutive statuses !IMPORTANT KEEP HERE FOR NOW
+        subquery = NodeStatusHistory.objects.filter(
+            node_id=OuterRef('node_id'),
+            timestamp__lt=OuterRef('timestamp')
+        ).order_by('-timestamp')
 
-@app.task
-def check_missing_nodes(missing_nodes):
-    nodes_to_update = []
-    for node_id in missing_nodes:
-        is_online = check_node_status(node_id)
-        nodes_to_update.append((node_id, is_online))
-    
-    bulk_update_node_statuses(nodes_to_update)
+        duplicate_records = NodeStatusHistory.objects.annotate(
+            prev_status=Subquery(subquery.values('is_online')[:1])
+        ).filter(is_online=F('prev_status'))
+        duplicate_records.delete()
