@@ -31,17 +31,24 @@ def calculate_deviation(scores, normalization_factors=None):
     if not scores or len(scores) < 2:
         print("Not enough scores to calculate deviation")
         return 0
+    
     if normalization_factors:
-        scores = [score / factor for score,
-                  factor in zip(scores, normalization_factors)]
+        scores = [score / factor for score, factor in zip(scores, normalization_factors)]
 
-    # Calculate relative changes
-    relative_changes = [(scores[i] - scores[i - 1]) / scores[i - 1]
-                        for i in range(1, len(scores))]
+    # Calculate relative changes, skipping pairs where the previous score is 0
+    relative_changes = []
+    for i in range(1, len(scores)):
+        if scores[i-1] != 0:  # Only calculate if previous score is non-zero
+            relative_change = (scores[i] - scores[i-1]) / scores[i-1]
+            relative_changes.append(relative_change)
+    
+    # If no valid relative changes could be calculated, return 0
+    if not relative_changes:
+        return 0
 
     avg_change = sum(relative_changes) / len(relative_changes)
     deviation_percent = (sum((change - avg_change) ** 2 for change in relative_changes)
-                         ** 0.5 / len(relative_changes) ** 0.5) * 100
+                        ** 0.5 / len(relative_changes) ** 0.5) * 100
     return deviation_percent
 
 
